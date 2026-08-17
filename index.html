@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Central de Atendimento Técnico</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F3F6F8;
+    --surface:#FFFFFF;
+    --sidebar-bg:#0B1420;
+    --sidebar-bg-2:#101D2E;
+    --sidebar-text:#9FB2C6;
+    --sidebar-text-active:#FFFFFF;
+    --primary:#0F6E63;
+    --primary-dark:#0B5148;
+    --primary-light:#E5F3F1;
+    --whatsapp:#25D366;
+    --whatsapp-dark:#1CA854;
+    --text:#16212E;
+    --text-muted:#63748A;
+    --border:#E1E7ED;
+    --danger:#D33636;
+    --danger-light:#FBEAEA;
+    --warning:#C97A0E;
+    --warning-light:#FBF1E1;
+    --info:#2563A8;
+    --info-light:#E9F1FB;
+    --radius:12px;
+    --radius-sm:8px;
+    --shadow:0 1px 2px rgba(16,29,46,.06), 0 8px 24px -12px rgba(16,29,46,.12);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Inter',system-ui,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand,.proto-num{font-family:'Sora',system-ui,sans-serif;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+  button{font-family:inherit;cursor:pointer;}
+  input,select,textarea{font-family:inherit;}
+  a{color:inherit;}
+  ::selection{background:var(--primary-light);}
+
+  /* ---------- LOGIN ---------- */
+  #login-view{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(circle at 20% 20%, #123B34 0%, #0B1420 55%, #070D15 100%);
+    padding:20px;
+  }
+  .login-card{
+    width:100%;max-width:380px;background:var(--surface);border-radius:16px;
+    padding:36px 32px 30px;box-shadow:0 30px 60px -20px rgba(0,0,0,.5);
+  }
+  .login-brand{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+  .login-brand .dot{width:10px;height:10px;border-radius:50%;background:var(--whatsapp);box-shadow:0 0 0 4px var(--primary-light);}
+  .login-brand span{font-weight:700;font-size:18px;letter-spacing:-.01em;}
+  .login-card p.sub{color:var(--text-muted);font-size:13.5px;margin:0 0 24px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:12.5px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;}
+  .field input,.field select,.field textarea{
+    width:100%;padding:11px 13px;border:1.5px solid var(--border);border-radius:var(--radius-sm);
+    font-size:14.5px;color:var(--text);background:#FCFDFE;transition:border-color .15s,box-shadow .15s;
+  }
+  .field input:focus,.field select:focus,.field textarea:focus{
+    outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-light);background:#fff;
+  }
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    padding:11px 18px;border-radius:var(--radius-sm);border:none;font-weight:600;font-size:14px;
+    transition:transform .05s ease,filter .15s;
+  }
+  .btn:active{transform:scale(.98);}
+  .btn-primary{background:var(--primary);color:#fff;}
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-whatsapp{background:var(--whatsapp);color:#fff;}
+  .btn-whatsapp:hover{filter:brightness(1.05);}
+  .btn-ghost{background:transparent;color:var(--text-muted);border:1.5px solid var(--border);}
+  .btn-ghost:hover{border-color:var(--primary);color:var(--primary);}
+  .btn-block{width:100%;}
+  .btn-danger-ghost{background:var(--danger-light);color:var(--danger);}
+  .btn-sm{padding:7px 12px;font-size:12.5px;}
+  .btn:disabled{opacity:.55;cursor:not-allowed;}
+  .error-msg{background:var(--danger-light);color:var(--danger);font-size:13px;padding:9px 12px;border-radius:var(--radius-sm);margin-bottom:14px;display:none;}
+  .hint{font-size:11.5px;color:var(--text-muted);margin-top:6px;}
+
+  /* ---------- APP SHELL ---------- */
+  #app-view{display:none;min-height:100vh;}
+  .shell{display:grid;grid-template-columns:236px 1fr;min-height:100vh;}
+  .sidebar{
+    background:linear-gradient(180deg,var(--sidebar-bg-2),var(--sidebar-bg));
+    color:var(--sidebar-text);padding:22px 14px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;
+  }
+  .sidebar .brand{display:flex;align-items:center;gap:9px;padding:6px 8px 22px;color:#fff;}
+  .sidebar .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--whatsapp);}
+  .sidebar .brand span{font-weight:700;font-size:15.5px;letter-spacing:-.01em;}
+  .nav-item{
+    display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;font-size:13.8px;
+    font-weight:500;margin-bottom:2px;transition:background .12s,color .12s;
+  }
+  .nav-item:hover{background:rgba(255,255,255,.06);color:#fff;}
+  .nav-item.active{background:var(--primary);color:#fff;font-weight:600;}
+  .nav-item .ic{width:17px;text-align:center;opacity:.9;}
+  .nav-group-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:#5C7085;margin:16px 10px 6px;font-weight:700;}
+  .sidebar-footer{margin-top:auto;border-top:1px solid rgba(255,255,255,.08);padding-top:14px;}
+  .agent-chip{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:9px;}
+  .agent-avatar{width:30px;height:30px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12.5px;flex-shrink:0;}
+  .agent-name{font-size:13px;font-weight:600;color:#fff;line-height:1.15;}
+  .agent-email{font-size:11px;color:#5C7085;line-height:1.2;}
+  .logout-link{margin-top:10px;font-size:12px;color:#7C90A6;padding:6px 8px;display:block;}
+  .logout-link:hover{color:#fff;}
+
+  .main{padding:26px 32px 60px;overflow-x:hidden;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
+  .topbar h1{font-size:21px;margin:0;letter-spacing:-.01em;}
+  .topbar p{margin:2px 0 0;color:var(--text-muted);font-size:13.5px;}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);}
+  .card-pad{padding:22px 24px;}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+  @media(max-width:820px){.grid-2,.grid-3{grid-template-columns:1fr;}.shell{grid-template-columns:1fr;}.sidebar{display:none;}}
+
+  .section-title{font-size:15px;font-weight:700;margin:0 0 4px;}
+  .section-sub{font-size:12.5px;color:var(--text-muted);margin:0 0 18px;}
+
+  /* stat cards */
+  .stat-card{padding:18px 20px;}
+  .stat-num{font-size:26px;font-weight:800;font-family:'Sora',sans-serif;}
+  .stat-label{font-size:12px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em;}
+
+  /* protocol ticket (signature element) */
+  .ticket{
+    position:relative;border-radius:14px;overflow:hidden;
+    background:linear-gradient(135deg,var(--primary-dark),var(--primary));
+    color:#fff;padding:22px 24px;margin-bottom:18px;
+  }
+  .ticket::after{
+    content:"";position:absolute;left:0;right:0;bottom:54px;height:0;
+    border-bottom:2px dashed rgba(255,255,255,.35);
+  }
+  .ticket .row{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;}
+  .ticket .label{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:rgba(255,255,255,.65);font-weight:700;margin-bottom:4px;}
+  .ticket .proto-num{font-size:24px;font-weight:800;letter-spacing:.02em;}
+  .ticket .meta{margin-top:16px;padding-top:16px;display:flex;gap:26px;flex-wrap:wrap;}
+  .ticket .meta div span{display:block;}
+  .ticket .meta .label{margin-bottom:2px;}
+  .ticket .meta .val{font-size:13.5px;font-weight:600;}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  thead th{
+    text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);
+    padding:0 14px 10px;font-weight:700;border-bottom:1.5px solid var(--border);
+  }
+  tbody td{padding:13px 14px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  tbody tr:hover{background:#FAFBFC;}
+  tbody tr{cursor:pointer;}
+  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:700;}
+  .badge-aberto{background:var(--info-light);color:var(--info);}
+  .badge-em_andamento{background:var(--warning-light);color:var(--warning);}
+  .badge-transferido{background:#F0E9FB;color:#6A3FBF;}
+  .badge-encerrado{background:#EAF6EC;color:#25843F;}
+  .empty-state{text-align:center;padding:50px 20px;color:var(--text-muted);}
+  .empty-state .ic{font-size:30px;margin-bottom:10px;}
+
+  .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:18px;}
+  .filters .field{margin-bottom:0;min-width:150px;}
+
+  .view{display:none;}
+  .view.active{display:block;}
+
+  /* modal / detail drawer */
+  .overlay{position:fixed;inset:0;background:rgba(11,20,32,.5);display:none;align-items:center;justify-content:center;z-index:50;padding:20px;}
+  .overlay.active{display:flex;}
+  .modal{background:var(--surface);border-radius:16px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 30px 60px -15px rgba(0,0,0,.35);}
+  .modal-head{display:flex;justify-content:space-between;align-items:flex-start;padding:22px 24px 0;}
+  .modal-close{background:var(--bg);border:none;width:28px;height:28px;border-radius:50%;font-size:15px;color:var(--text-muted);}
+  .modal-body{padding:18px 24px 26px;}
+
+  .interacao-item{padding:12px 14px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:#FCFDFE;}
+  .interacao-item .top{display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:6px;}
+  .interacao-item .tipo-tag{font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:10px;}
+  .interacao-item p{margin:0;font-size:13.5px;line-height:1.5;white-space:pre-wrap;}
+
+  .toast{position:fixed;bottom:22px;right:22px;background:var(--text);color:#fff;padding:12px 18px;border-radius:10px;font-size:13.5px;box-shadow:var(--shadow);z-index:100;opacity:0;transform:translateY(10px);transition:opacity .2s,transform .2s;}
+  .toast.show{opacity:1;transform:translateY(0);}
+
+  .loading-row{display:flex;align-items:center;gap:10px;color:var(--text-muted);font-size:13px;padding:20px 0;}
+  .spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<div id="login-view">
+  <div class="login-card">
+    <div class="login-brand"><span class="dot"></span><span>Central de Atendimento</span></div>
+    <p class="sub">Suporte técnico via WhatsApp — acesso restrito a agentes.</p>
+    <div class="error-msg" id="login-error"></div>
+    <div class="field"><label>E-mail</label><input type="email" id="login-email" placeholder="agente@empresa.com" autocomplete="username"/></div>
+    <div class="field"><label>Senha</label><input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password"/></div>
+    <button class="btn btn-primary btn-block" id="btn-login" disabled>Carregando…</button>
+    <p class="hint">Os acessos são criados pelo administrador no painel do Supabase (Authentication → Users).</p>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="app-view">
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><span>Central Técnica</span></div>
+    <div class="nav-item active" data-view="dashboard"><span class="ic">◆</span>Painel</div>
+    <div class="nav-item" data-view="novo"><span class="ic">＋</span>Novo Atendimento</div>
+    <div class="nav-item" data-view="atendimentos"><span class="ic">☰</span>Atendimentos Ativos</div>
+    <div class="nav-item" data-view="historico"><span class="ic">⏱</span>Histórico &amp; Auditoria</div>
+    <div class="nav-group-label">Configuração</div>
+    <div class="nav-item" data-view="linhas"><span class="ic">☏</span>Linhas WhatsApp</div>
+    <div class="nav-group-label" id="nav-group-supervisor" style="display:none;">Supervisão</div>
+    <div class="nav-item" data-view="supervisao" id="nav-supervisao" style="display:none;"><span class="ic">🛡</span>Todos os atendimentos</div>
+    <div class="sidebar-footer">
+      <div class="agent-chip">
+        <div class="agent-avatar" id="agent-avatar">--</div>
+        <div>
+          <div class="agent-name" id="agent-name">—</div>
+          <div class="agent-email" id="agent-email">— <span id="agent-role-badge"></span></div>
+        </div>
+      </div>
+      <a class="logout-link" id="btn-logout" href="#">Sair da conta</a>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <!-- ---------- DASHBOARD ---------- -->
+    <section class="view active" id="view-dashboard">
+      <div class="topbar"><div><h1>Meu painel</h1><p>Visão consolidada dos protocolos que você atende.</p></div></div>
+      <div class="grid-3" style="margin-bottom:22px;">
+        <div class="card stat-card"><div class="stat-num" id="stat-abertos">–</div><div class="stat-label">Em aberto</div></div>
+        <div class="card stat-card"><div class="stat-num" id="stat-andamento">–</div><div class="stat-label">Em andamento</div></div>
+        <div class="card stat-card"><div class="stat-num" id="stat-hoje">–</div><div class="stat-label">Protocolos hoje</div></div>
+      </div>
+      <div class="card card-pad">
+        <p class="section-title">Meus últimos protocolos</p>
+        <p class="section-sub">Os 8 atendimentos mais recentes sob sua responsabilidade.</p>
+        <div id="dashboard-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
+      </div>
+    </section>
+
+    <!-- ---------- NOVO ATENDIMENTO ---------- -->
+    <section class="view" id="view-novo">
+      <div class="topbar"><div><h1>Novo atendimento</h1><p>Gera o protocolo e o link do WhatsApp já com a mensagem inicial pronta.</p></div></div>
+      <div class="grid-2">
+        <div class="card card-pad">
+          <div class="field"><label>Linha que recebeu o chamado</label>
+            <select id="f-linha"></select>
+          </div>
+          <div class="field"><label>Nome do cliente</label><input id="f-nome" placeholder="Ex: Clínica Vida Nova"/></div>
+          <div class="field"><label>WhatsApp do cliente (com DDI e DDD)</label><input id="f-telefone" placeholder="Ex: 5521988887777"/></div>
+          <div class="field"><label>Equipamento</label><input id="f-equipamento" placeholder="Ex: Analisador Bioquímico X200"/></div>
+          <div class="field"><label>Descrição inicial do problema</label><textarea id="f-descricao" rows="3" placeholder="Ex: equipamento não liga após queda de energia"></textarea></div>
+          <button class="btn btn-primary btn-block" id="btn-criar-atendimento">Gerar protocolo</button>
+        </div>
+        <div class="card card-pad" id="novo-preview">
+          <p class="section-title">Prévia da mensagem inicial</p>
+          <p class="section-sub">Enviada ao cliente assim que o protocolo é criado.</p>
+          <div style="background:var(--bg);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;min-height:150px;" id="preview-text">Preencha o formulário ao lado para ver a prévia…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- ATENDIMENTOS ATIVOS ---------- -->
+    <section class="view" id="view-atendimentos">
+      <div class="topbar"><div><h1>Meus atendimentos ativos</h1><p>Seus chamados em aberto ou em andamento.</p></div></div>
+      <div class="card card-pad">
+        <div id="atendimentos-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
+      </div>
+    </section>
+
+    <!-- ---------- HISTÓRICO / AUDITORIA ---------- -->
+    <section class="view" id="view-historico">
+      <div class="topbar"><div><h1>Meu histórico &amp; auditoria</h1><p>Protocolos que você atendeu, filtráveis por período, protocolo, linha ou status.</p></div></div>
+      <div class="card card-pad">
+        <div class="filters">
+          <div class="field"><label>De</label><input type="date" id="fh-de"/></div>
+          <div class="field"><label>Até</label><input type="date" id="fh-ate"/></div>
+          <div class="field"><label>Protocolo</label><input id="fh-protocolo" placeholder="AT-2026..."/></div>
+          <div class="field"><label>Linha</label><select id="fh-linha"><option value="">Todas</option></select></div>
+          <div class="field"><label>Status</label>
+            <select id="fh-status">
+              <option value="">Todos</option>
+              <option value="aberto">Aberto</option>
+              <option value="em_andamento">Em andamento</option>
+              <option value="transferido">Transferido</option>
+              <option value="encerrado">Encerrado</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-sm" id="btn-filtrar-historico">Filtrar</button>
+          <button class="btn btn-ghost btn-sm" id="btn-limpar-historico">Limpar</button>
+        </div>
+        <div id="historico-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
+      </div>
+    </section>
+
+    <!-- ---------- LINHAS ---------- -->
+    <section class="view" id="view-linhas">
+      <div class="topbar"><div><h1>Linhas de WhatsApp</h1><p>Números que recebem chamados e geram protocolos.</p></div></div>
+      <div class="grid-2">
+        <div class="card card-pad">
+          <p class="section-title">Cadastrar nova linha</p>
+          <div class="field"><label>Nome da linha</label><input id="fl-nome" placeholder="Ex: Suporte Técnico — RJ"/></div>
+          <div class="field"><label>Número (com DDI e DDD)</label><input id="fl-numero" placeholder="Ex: 5521999990000"/></div>
+          <button class="btn btn-primary btn-block" id="btn-criar-linha">Adicionar linha</button>
+        </div>
+        <div class="card card-pad">
+          <p class="section-title">Linhas cadastradas</p>
+          <div id="linhas-list-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- SUPERVISÃO (somente admin) ---------- -->
+    <section class="view" id="view-supervisao">
+      <div class="topbar"><div><h1>Todos os atendimentos</h1><p>Visão de supervisor: todos os protocolos, de todos os agentes e linhas.</p></div></div>
+      <div class="grid-3" style="margin-bottom:22px;">
+        <div class="card stat-card"><div class="stat-num" id="stat-sup-total">–</div><div class="stat-label">Total de protocolos</div></div>
+        <div class="card stat-card"><div class="stat-num" id="stat-sup-abertos">–</div><div class="stat-label">Em aberto</div></div>
+        <div class="card stat-card"><div class="stat-num" id="stat-sup-hoje">–</div><div class="stat-label">Protocolos hoje</div></div>
+      </div>
+      <div class="card card-pad">
+        <div class="filters">
+          <div class="field"><label>De</label><input type="date" id="fs-de"/></div>
+          <div class="field"><label>Até</label><input type="date" id="fs-ate"/></div>
+          <div class="field"><label>Protocolo</label><input id="fs-protocolo" placeholder="AT-2026..."/></div>
+          <div class="field"><label>Agente</label><select id="fs-agente"><option value="">Todos</option></select></div>
+          <div class="field"><label>Linha</label><select id="fs-linha"><option value="">Todas</option></select></div>
+          <div class="field"><label>Status</label>
+            <select id="fs-status">
+              <option value="">Todos</option>
+              <option value="aberto">Aberto</option>
+              <option value="em_andamento">Em andamento</option>
+              <option value="transferido">Transferido</option>
+              <option value="encerrado">Encerrado</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-sm" id="btn-filtrar-supervisao">Filtrar</button>
+          <button class="btn btn-ghost btn-sm" id="btn-limpar-supervisao">Limpar</button>
+        </div>
+        <div id="supervisao-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+</div>
+
+<!-- ================= MODAL: DETALHE DO ATENDIMENTO ================= -->
+<div class="overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;" id="modal-protocolo-label">Protocolo</div>
+        <div class="proto-num" style="font-size:19px;" id="modal-protocolo">—</div>
+      </div>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body">
+      <!-- preenchido via JS -->
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+// =====================================================================
+// CONFIGURAÇÃO — a URL e a chave anon do Supabase NÃO ficam neste
+// arquivo. Elas são lidas em tempo de execução de /api/config, uma
+// função serverless do Vercel que devolve process.env.SUPABASE_URL e
+// process.env.SUPABASE_ANON_KEY (configuradas em Project Settings →
+// Environment Variables no Vercel). Veja /api/config.js e o README.
+// =====================================================================
+let sb = null;
+let currentAgente = null;
+let linhasCache = [];
+let agentesCache = [];
+
+async function iniciarSupabase(){
+  const errBox = $('#login-error');
+  try{
+    const resp = await fetch('/api/config');
+    if(!resp.ok) throw new Error('config indisponível');
+    const cfg = await resp.json();
+    if(!cfg.url || !cfg.anonKey) throw new Error('config incompleta');
+    sb = createClient(cfg.url, cfg.anonKey);
+    $('#btn-login').disabled = false;
+    $('#btn-login').textContent = 'Entrar';
+    // sessão já existente? entra direto.
+    const { data } = await sb.auth.getSession();
+    if(data.session) afterLogin(data.session);
+  }catch(err){
+    errBox.textContent = 'Não foi possível carregar a configuração do servidor. Verifique as variáveis de ambiente SUPABASE_URL e SUPABASE_ANON_KEY no Vercel.';
+    errBox.style.display = 'block';
+    $('#btn-login').disabled = true;
+  }
+}
+
+// ---------------- helpers ----------------
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+function toast(msg){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2600);
+}
+
+function soDigitos(v){ return (v||'').replace(/\D/g,''); }
+
+function waLink(numero, texto){
+  return `https://wa.me/${soDigitos(numero)}?text=${encodeURIComponent(texto)}`;
+}
+
+function fmtData(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+}
+
+function badgeStatus(status){
+  const labels = {aberto:'Aberto', em_andamento:'Em andamento', transferido:'Transferido', encerrado:'Encerrado'};
+  return `<span class="badge badge-${status}">${labels[status]||status}</span>`;
+}
+
+function iniciais(nome){
+  return (nome||'??').split(' ').filter(Boolean).slice(0,2).map(p=>p[0].toUpperCase()).join('');
+}
+
+// ---------------- AUTENTICAÇÃO ----------------
+$('#btn-login').addEventListener('click', doLogin);
+$('#login-password').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+
+async function doLogin(){
+  const email = $('#login-email').value.trim();
+  const password = $('#login-password').value;
+  const errBox = $('#login-error');
+  errBox.style.display = 'none';
+  if(!email || !password){ errBox.textContent = 'Informe e-mail e senha.'; errBox.style.display='block'; return; }
+
+  $('#btn-login').disabled = true; $('#btn-login').textContent = 'Entrando…';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  $('#btn-login').disabled = false; $('#btn-login').textContent = 'Entrar';
+
+  if(error){ errBox.textContent = 'E-mail ou senha inválidos.'; errBox.style.display='block'; return; }
+  await afterLogin(data.session);
+}
+
+$('#btn-logout').addEventListener('click', async (e)=>{
+  e.preventDefault();
+  await sb.auth.signOut();
+  location.reload();
+});
+
+async function afterLogin(session){
+  const user = session.user;
+  const { data: agente } = await sb.from('agentes').select('*').eq('id', user.id).single();
+  currentAgente = agente || { id:user.id, nome:user.email, email:user.email };
+
+  $('#agent-name').textContent = currentAgente.nome;
+  $('#agent-email').textContent = currentAgente.email;
+  $('#agent-avatar').textContent = iniciais(currentAgente.nome);
+
+  if(currentAgente.is_admin){
+    $('#nav-group-supervisor').style.display = 'block';
+    $('#nav-supervisao').style.display = 'flex';
+    $('#agent-role-badge').textContent = '· Supervisor';
+    await carregarAgentesParaFiltro();
+  }
+
+  $('#login-view').style.display = 'none';
+  $('#app-view').style.display = 'block';
+
+  await carregarLinhas();
+  await renderDashboard();
+}
+
+// inicializa a conexão com o Supabase assim que a página carrega
+iniciarSupabase();
+
+// ---------------- NAVEGAÇÃO ----------------
+$$('.nav-item').forEach(item=>{
+  item.addEventListener('click', ()=> switchView(item.dataset.view));
+});
+
+function switchView(view){
+  $$('.nav-item').forEach(i=>i.classList.toggle('active', i.dataset.view===view));
+  $$('.view').forEach(v=>v.classList.remove('active'));
+  $('#view-'+view).classList.add('active');
+  if(view==='dashboard') renderDashboard();
+  if(view==='atendimentos') renderAtendimentosAtivos();
+  if(view==='historico') renderHistorico();
+  if(view==='linhas') renderLinhas();
+  if(view==='supervisao') renderSupervisao();
+}
+
+// ---------------- LINHAS ----------------
+async function carregarLinhas(){
+  const { data, error } = await sb.from('linhas').select('*').eq('ativo', true).order('nome');
+  linhasCache = data || [];
+  const selNovo = $('#f-linha');
+  const selHist = $('#fh-linha');
+  const selSup = $('#fs-linha');
+  selNovo.innerHTML = linhasCache.map(l=>`<option value="${l.id}">${l.nome} (${l.numero})</option>`).join('') || '<option value="">Nenhuma linha cadastrada</option>';
+  selHist.innerHTML = '<option value="">Todas</option>' + linhasCache.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');
+  if(selSup) selSup.innerHTML = '<option value="">Todas</option>' + linhasCache.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');
+}
+
+$('#btn-criar-linha').addEventListener('click', async ()=>{
+  const nome = $('#fl-nome').value.trim();
+  const numero = soDigitos($('#fl-numero').value);
+  if(!nome || !numero){ toast('Preencha nome e número da linha.'); return; }
+  const { error } = await sb.from('linhas').insert({ nome, numero });
+  if(error){ toast('Erro ao criar linha: '+error.message); return; }
+  $('#fl-nome').value=''; $('#fl-numero').value='';
+  toast('Linha cadastrada.');
+  await carregarLinhas();
+  renderLinhas();
+});
+
+async function renderLinhas(){
+  const wrap = $('#linhas-list-wrap');
+  const { data, error } = await sb.from('linhas').select('*').order('criado_em', {ascending:false});
+  if(error){ wrap.innerHTML = `<p class="hint">Erro ao carregar linhas.</p>`; return; }
+  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">☏</div>Nenhuma linha cadastrada ainda.</div>`; return; }
+  wrap.innerHTML = data.map(l=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
+      <div>
+        <div style="font-weight:600;font-size:13.5px;">${l.nome}</div>
+        <div class="mono" style="font-size:12px;color:var(--text-muted);">+${l.numero}</div>
+      </div>
+      <span class="badge ${l.ativo?'badge-encerrado':'badge-aberto'}">${l.ativo?'Ativa':'Inativa'}</span>
+    </div>
+  `).join('');
+}
+
+// ---------------- NOVO ATENDIMENTO ----------------
+function montarMensagemInicial(){
+  const nome = $('#f-nome').value.trim() || '(cliente)';
+  const equipamento = $('#f-equipamento').value.trim();
+  const descricao = $('#f-descricao').value.trim();
+  return `Olá, ${nome}! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: (gerado ao salvar)\n${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao? 'Problema relatado: '+descricao+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
+}
+
+['f-nome','f-equipamento','f-descricao'].forEach(id=>{
+  $('#'+id).addEventListener('input', ()=>{ $('#preview-text').textContent = montarMensagemInicial(); });
+});
+
+$('#btn-criar-atendimento').addEventListener('click', async ()=>{
+  const linha_id = $('#f-linha').value;
+  const cliente_nome = $('#f-nome').value.trim();
+  const cliente_telefone = soDigitos($('#f-telefone').value);
+  const equipamento = $('#f-equipamento').value.trim();
+  const descricao_problema = $('#f-descricao').value.trim();
+
+  if(!linha_id){ toast('Cadastre e selecione uma linha primeiro.'); return; }
+  if(!cliente_nome || !cliente_telefone){ toast('Informe nome e WhatsApp do cliente.'); return; }
+
+  const btn = $('#btn-criar-atendimento');
+  btn.disabled = true; btn.textContent = 'Gerando…';
+
+  const { data, error } = await sb.from('atendimentos').insert({
+    linha_id, cliente_nome, cliente_telefone, equipamento, descricao_problema,
+    status: 'aberto', agente_id: currentAgente.id
+  }).select().single();
+
+  btn.disabled = false; btn.textContent = 'Gerar protocolo';
+
+  if(error){ toast('Erro ao criar atendimento: '+error.message); return; }
+
+  const mensagem = `Olá, ${cliente_nome}! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
+
+  await sb.from('interacoes').insert({
+    atendimento_id: data.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: mensagem
+  });
+
+  toast('Protocolo '+data.protocolo+' criado!');
+  window.open(waLink(cliente_telefone, mensagem), '_blank');
+
+  // limpa formulário
+  $('#f-nome').value=''; $('#f-telefone').value=''; $('#f-equipamento').value=''; $('#f-descricao').value='';
+  $('#preview-text').textContent = 'Preencha o formulário ao lado para ver a prévia…';
+
+  switchView('atendimentos');
+});
+
+// ---------------- DASHBOARD ----------------
+async function renderDashboard(){
+  const hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+
+  const [{count:cAberto}, {count:cAndamento}, {count:cHoje}, {data:recentes}] = await Promise.all([
+    sb.from('atendimentos').select('*', {count:'exact', head:true}).eq('status','aberto'),
+    sb.from('atendimentos').select('*', {count:'exact', head:true}).eq('status','em_andamento'),
+    sb.from('atendimentos').select('*', {count:'exact', head:true}).gte('criado_em', hojeInicio.toISOString()),
+    sb.from('atendimentos').select('*, linhas(nome)').order('criado_em',{ascending:false}).limit(8)
+  ]);
+
+  $('#stat-abertos').textContent = cAberto ?? 0;
+  $('#stat-andamento').textContent = cAndamento ?? 0;
+  $('#stat-hoje').textContent = cHoje ?? 0;
+
+  const wrap = $('#dashboard-table-wrap');
+  if(!recentes || !recentes.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🗂</div>Nenhum atendimento ainda.</div>`; return; }
+  wrap.innerHTML = tabelaAtendimentos(recentes);
+  bindRowClicks(wrap);
+}
+
+// ---------------- ATENDIMENTOS ATIVOS ----------------
+async function renderAtendimentosAtivos(){
+  const wrap = $('#atendimentos-table-wrap');
+  const { data, error } = await sb.from('atendimentos')
+    .select('*, linhas(nome)')
+    .in('status', ['aberto','em_andamento'])
+    .order('criado_em', {ascending:false});
+
+  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar.</p>'; return; }
+  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">✅</div>Nenhum atendimento ativo no momento.</div>`; return; }
+  wrap.innerHTML = tabelaAtendimentos(data);
+  bindRowClicks(wrap);
+}
+
+function tabelaAtendimentos(lista, opts={}){
+  const mostrarAgente = !!opts.mostrarAgente;
+  return `<table><thead><tr>
+      <th>Protocolo</th><th>Cliente</th><th>Linha</th>${mostrarAgente?'<th>Agente</th>':''}<th>Status</th><th>Criado em</th>
+    </tr></thead><tbody>
+    ${lista.map(a=>`
+      <tr data-id="${a.id}">
+        <td class="mono" style="font-weight:600;">${a.protocolo}</td>
+        <td>${a.cliente_nome}</td>
+        <td>${a.linhas?.nome || '—'}</td>
+        ${mostrarAgente?`<td>${a.agentes?.nome || '—'}</td>`:''}
+        <td>${badgeStatus(a.status)}</td>
+        <td>${fmtData(a.criado_em)}</td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+function bindRowClicks(wrap){
+  wrap.querySelectorAll('tbody tr').forEach(tr=>{
+    tr.addEventListener('click', ()=> abrirDetalhe(tr.dataset.id));
+  });
+}
+
+// ---------------- SUPERVISÃO (somente admin) ----------------
+async function carregarAgentesParaFiltro(){
+  const { data } = await sb.from('agentes').select('id, nome, email').order('nome');
+  agentesCache = data || [];
+  const sel = $('#fs-agente');
+  if(sel) sel.innerHTML = '<option value="">Todos</option>' + agentesCache.map(a=>`<option value="${a.id}">${a.nome}</option>`).join('');
+}
+
+$('#btn-filtrar-supervisao')?.addEventListener('click', renderSupervisao);
+$('#btn-limpar-supervisao')?.addEventListener('click', ()=>{
+  $('#fs-de').value=''; $('#fs-ate').value=''; $('#fs-protocolo').value='';
+  $('#fs-agente').value=''; $('#fs-linha').value=''; $('#fs-status').value='';
+  renderSupervisao();
+});
+
+async function renderSupervisao(){
+  const wrap = $('#supervisao-table-wrap');
+  wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Carregando…</div>';
+
+  const hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+  const [{count:cTotal}, {count:cAberto}, {count:cHoje}] = await Promise.all([
+    sb.from('atendimentos').select('*', {count:'exact', head:true}),
+    sb.from('atendimentos').select('*', {count:'exact', head:true}).eq('status','aberto'),
+    sb.from('atendimentos').select('*', {count:'exact', head:true}).gte('criado_em', hojeInicio.toISOString())
+  ]);
+  $('#stat-sup-total').textContent = cTotal ?? 0;
+  $('#stat-sup-abertos').textContent = cAberto ?? 0;
+  $('#stat-sup-hoje').textContent = cHoje ?? 0;
+
+  let q = sb.from('atendimentos').select('*, linhas(nome), agentes(nome)').order('criado_em', {ascending:false}).limit(300);
+
+  const de = $('#fs-de').value, ate = $('#fs-ate').value;
+  const protocolo = $('#fs-protocolo').value.trim();
+  const agente = $('#fs-agente').value;
+  const linha = $('#fs-linha').value;
+  const status = $('#fs-status').value;
+
+  if(de) q = q.gte('criado_em', new Date(de+'T00:00:00').toISOString());
+  if(ate) q = q.lte('criado_em', new Date(ate+'T23:59:59').toISOString());
+  if(protocolo) q = q.ilike('protocolo', `%${protocolo}%`);
+  if(agente) q = q.eq('agente_id', agente);
+  if(linha) q = q.eq('linha_id', linha);
+  if(status) q = q.eq('status', status);
+
+  const { data, error } = await q;
+  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar. Confirme que este usuário está marcado como Supervisor (is_admin) no banco.</p>'; return; }
+  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>Nenhum resultado para os filtros aplicados.</div>`; return; }
+  wrap.innerHTML = tabelaAtendimentos(data, {mostrarAgente:true});
+  bindRowClicks(wrap);
+}
+
+
+$('#btn-filtrar-historico').addEventListener('click', renderHistorico);
+$('#btn-limpar-historico').addEventListener('click', ()=>{
+  $('#fh-de').value=''; $('#fh-ate').value=''; $('#fh-protocolo').value='';
+  $('#fh-linha').value=''; $('#fh-status').value='';
+  renderHistorico();
+});
+
+async function renderHistorico(){
+  const wrap = $('#historico-table-wrap');
+  wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Carregando…</div>';
+
+  let q = sb.from('atendimentos').select('*, linhas(nome)').order('criado_em', {ascending:false}).limit(300);
+
+  const de = $('#fh-de').value, ate = $('#fh-ate').value;
+  const protocolo = $('#fh-protocolo').value.trim();
+  const linha = $('#fh-linha').value;
+  const status = $('#fh-status').value;
+
+  if(de) q = q.gte('criado_em', new Date(de+'T00:00:00').toISOString());
+  if(ate) q = q.lte('criado_em', new Date(ate+'T23:59:59').toISOString());
+  if(protocolo) q = q.ilike('protocolo', `%${protocolo}%`);
+  if(linha) q = q.eq('linha_id', linha);
+  if(status) q = q.eq('status', status);
+
+  const { data, error } = await q;
+  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar histórico.</p>'; return; }
+  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>Nenhum resultado para os filtros aplicados.</div>`; return; }
+  wrap.innerHTML = tabelaAtendimentos(data);
+  bindRowClicks(wrap);
+}
+
+// ---------------- DETALHE / MODAL ----------------
+let atendimentoAtualId = null;
+
+async function abrirDetalhe(id){
+  atendimentoAtualId = id;
+  const overlay = $('#modal-overlay');
+  overlay.classList.add('active');
+  $('#modal-body').innerHTML = '<div class="loading-row"><div class="spinner"></div>Carregando…</div>';
+
+  const [{data:atendimento}, {data:interacoes}] = await Promise.all([
+    sb.from('atendimentos').select('*, linhas(nome, numero), agentes(nome, email)').eq('id', id).single(),
+    sb.from('interacoes').select('*, agentes(nome)').eq('atendimento_id', id).order('criado_em', {ascending:true})
+  ]);
+
+  if(!atendimento){ $('#modal-body').innerHTML = '<p class="hint">Atendimento não encontrado.</p>'; return; }
+
+  $('#modal-protocolo').textContent = atendimento.protocolo;
+
+  const listaInteracoes = (interacoes||[]).map(i=>`
+    <div class="interacao-item">
+      <div class="top"><span class="tipo-tag">${i.tipo.replace('_',' ')}</span><span>${i.agentes?.nome||'—'} · ${fmtData(i.criado_em)}</span></div>
+      <p>${escapeHtml(i.conteudo)}</p>
+    </div>
+  `).join('') || '<p class="hint">Nenhuma interação registrada ainda.</p>';
+
+  $('#modal-body').innerHTML = `
+    <div class="ticket" style="margin-top:14px;">
+      <div class="row">
+        <div><div class="label">Cliente</div><div style="font-weight:700;font-size:15px;">${atendimento.cliente_nome}</div></div>
+        <div>${badgeStatus(atendimento.status)}</div>
+      </div>
+      <div class="meta">
+        <div><span class="label">WhatsApp</span><span class="val mono">+${atendimento.cliente_telefone}</span></div>
+        <div><span class="label">Equipamento</span><span class="val">${atendimento.equipamento||'—'}</span></div>
+        <div><span class="label">Linha</span><span class="val">${atendimento.linhas?.nome||'—'}</span></div>
+        <div><span class="label">Agente responsável</span><span class="val">${atendimento.agentes?.nome||'—'}</span></div>
+      </div>
+    </div>
+
+    ${currentAgente.is_admin ? `
+    <div class="card card-pad" style="margin-bottom:18px;background:var(--bg);">
+      <p class="section-title" style="margin-bottom:8px;">Reatribuir (ação de supervisor)</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;">
+        <div class="field" style="flex:1;min-width:180px;margin-bottom:0;">
+          <label>Novo agente responsável</label>
+          <select id="sup-reatribuir-agente">${agentesCache.map(a=>`<option value="${a.id}" ${a.id===atendimento.agente_id?'selected':''}>${a.nome}</option>`).join('')}</select>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-reatribuir">Reatribuir</button>
+      </div>
+    </div>` : ''}
+
+    <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
+      <a class="btn btn-whatsapp btn-sm" target="_blank" href="${waLink(atendimento.cliente_telefone,'Olá '+atendimento.cliente_nome+', tudo bem? Sobre o protocolo '+atendimento.protocolo+': ')}">Abrir WhatsApp do cliente</a>
+      ${atendimento.status!=='encerrado' ? `<button class="btn btn-ghost btn-sm" id="btn-encerrar">Encerrar atendimento</button>`:''}
+      <button class="btn btn-ghost btn-sm" id="btn-transferir">Transferir / reenviar histórico</button>
+    </div>
+
+    <p class="section-title" style="margin-bottom:10px;">Registrar novo procedimento</p>
+    <div class="field"><textarea id="nova-interacao" rows="3" placeholder="Ex: Solicitar ao cliente que reinicie o equipamento e verifique o fusível do painel traseiro."></textarea></div>
+    <div style="display:flex;gap:8px;margin-bottom:22px;">
+      <button class="btn btn-primary btn-sm" id="btn-salvar-interacao">Salvar</button>
+      <button class="btn btn-whatsapp btn-sm" id="btn-salvar-enviar">Salvar e enviar via WhatsApp</button>
+    </div>
+
+    <p class="section-title" style="margin-bottom:10px;">Histórico do protocolo</p>
+    <div id="lista-interacoes">${listaInteracoes}</div>
+  `;
+
+  $('#btn-salvar-interacao').addEventListener('click', ()=> salvarInteracao(atendimento, false));
+  $('#btn-salvar-enviar').addEventListener('click', ()=> salvarInteracao(atendimento, true));
+  const btnEnc = $('#btn-encerrar');
+  if(btnEnc) btnEnc.addEventListener('click', ()=> encerrarAtendimento(atendimento));
+  $('#btn-transferir').addEventListener('click', ()=> abrirTransferencia(atendimento, interacoes||[]));
+  const btnReat = $('#btn-reatribuir');
+  if(btnReat) btnReat.addEventListener('click', ()=> reatribuirAtendimento(atendimento));
+}
+
+async function reatribuirAtendimento(atendimento){
+  const novoId = $('#sup-reatribuir-agente').value;
+  if(!novoId || novoId === atendimento.agente_id){ toast('Selecione um agente diferente do atual.'); return; }
+  const novoNome = agentesCache.find(a=>a.id===novoId)?.nome || 'outro agente';
+
+  const { error } = await sb.from('atendimentos').update({ agente_id: novoId }).eq('id', atendimento.id);
+  if(error){ toast('Erro ao reatribuir: '+error.message); return; }
+
+  await sb.from('interacoes').insert({
+    atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'nota_interna',
+    conteudo: `Reatribuído por ${currentAgente.nome} (supervisor) para ${novoNome}.`
+  });
+
+  toast('Atendimento reatribuído para '+novoNome+'.');
+  $('#modal-overlay').classList.remove('active');
+  renderSupervisao();
+}
+
+function escapeHtml(s){
+  return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function salvarInteracao(atendimento, enviarWhatsapp){
+  const texto = $('#nova-interacao').value.trim();
+  if(!texto){ toast('Escreva o procedimento antes de salvar.'); return; }
+
+  await sb.from('interacoes').insert({
+    atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'procedimento', conteudo: texto
+  });
+
+  if(atendimento.status === 'aberto'){
+    await sb.from('atendimentos').update({status:'em_andamento'}).eq('id', atendimento.id);
+  }
+
+  if(enviarWhatsapp){
+    window.open(waLink(atendimento.cliente_telefone, texto), '_blank');
+  }
+  toast('Procedimento registrado.');
+  abrirDetalhe(atendimento.id);
+}
+
+async function encerrarAtendimento(atendimento){
+  if(!confirm('Encerrar este atendimento?')) return;
+  await sb.from('atendimentos').update({status:'encerrado'}).eq('id', atendimento.id);
+  toast('Atendimento encerrado.');
+  abrirDetalhe(atendimento.id);
+}
+
+// ---------------- TRANSFERÊNCIA / REENVIO ----------------
+function abrirTransferencia(atendimento, interacoes){
+  const resumo = montarResumoHistorico(atendimento, interacoes);
+  const numero = prompt('WhatsApp do especialista que vai continuar o atendimento (com DDI e DDD):','');
+  if(!numero) return;
+
+  sb.from('atendimentos').update({status:'transferido'}).eq('id', atendimento.id).then(()=>{
+    sb.from('interacoes').insert({
+      atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'transferencia',
+      conteudo: 'Atendimento transferido para '+soDigitos(numero)
+    }).then(()=>{
+      window.open(waLink(numero, resumo), '_blank');
+      toast('Histórico enviado para transferência.');
+      abrirDetalhe(atendimento.id);
+    });
+  });
+}
+
+function montarResumoHistorico(atendimento, interacoes){
+  let txt = `📋 TRANSFERÊNCIA DE ATENDIMENTO\nProtocolo: ${atendimento.protocolo}\nCliente: ${atendimento.cliente_nome}\nWhatsApp do cliente: +${atendimento.cliente_telefone}\nEquipamento: ${atendimento.equipamento||'—'}\nProblema inicial: ${atendimento.descricao_problema||'—'}\n\n— Histórico de procedimentos —\n`;
+  interacoes.forEach(i=>{
+    txt += `\n[${fmtData(i.criado_em)}] (${i.tipo}) ${i.conteudo}`;
+  });
+  txt += `\n\nPor favor, dê continuidade ao atendimento a partir deste ponto.`;
+  return txt;
+}
+
+// reenvio a partir do histórico (mesma lógica de transferência, sem mudar status)
+async function reenviarProtocolo(id){
+  const [{data:atendimento}, {data:interacoes}] = await Promise.all([
+    sb.from('atendimentos').select('*').eq('id', id).single(),
+    sb.from('interacoes').select('*').eq('atendimento_id', id).order('criado_em',{ascending:true})
+  ]);
+  const resumo = montarResumoHistorico(atendimento, interacoes||[]);
+  const numero = prompt('Reenviar o histórico deste protocolo para qual WhatsApp?','');
+  if(!numero) return;
+  window.open(waLink(numero, resumo), '_blank');
+}
+
+// ---------------- MODAL controls ----------------
+$('#modal-close').addEventListener('click', ()=> $('#modal-overlay').classList.remove('active'));
+$('#modal-overlay').addEventListener('click', (e)=>{ if(e.target.id==='modal-overlay') $('#modal-overlay').classList.remove('active'); });
+
+</script>
+</body>
+</html>
