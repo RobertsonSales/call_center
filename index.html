@@ -449,7 +449,7 @@ $('#login-password').addEventListener('keydown', e => { if(e.key==='Enter') doLo
 
 async function doLogin(){
   const email = $('#login-email').value.trim();
-  const password = $('#login-password').value;
+  const password = $('#login-password').value.trim();
   const errBox = $('#login-error');
   errBox.style.display = 'none';
   if(!email || !password){ errBox.textContent = 'Informe e-mail e senha.'; errBox.style.display='block'; return; }
@@ -458,8 +458,27 @@ async function doLogin(){
   const { data, error } = await sb.auth.signInWithPassword({ email, password });
   $('#btn-login').disabled = false; $('#btn-login').textContent = 'Entrar';
 
-  if(error){ errBox.textContent = 'E-mail ou senha inválidos.'; errBox.style.display='block'; return; }
+  if(error){
+    errBox.textContent = mensagemErroLogin(error);
+    errBox.style.display = 'block';
+    return;
+  }
   await afterLogin(data.session);
+}
+
+function mensagemErroLogin(error){
+  const msg = (error?.message || '').toLowerCase();
+  if(msg.includes('email not confirmed')){
+    return 'Este e-mail ainda não foi confirmado no Supabase. Vá em Authentication → Users, abra o usuário e confirme o e-mail (ou recrie-o marcando "Auto Confirm User").';
+  }
+  if(msg.includes('invalid login credentials')){
+    return 'E-mail ou senha incorretos. Confira se não colou espaço/tab extra ao digitar (copie e cole com cuidado) e se o usuário existe em Authentication → Users.';
+  }
+  if(msg.includes('user not found')){
+    return 'Não existe usuário com este e-mail no Supabase Auth.';
+  }
+  // fallback: mostra a mensagem original do Supabase para diagnóstico
+  return 'Falha no login: ' + (error?.message || 'erro desconhecido') + '.';
 }
 
 $('#btn-logout').addEventListener('click', async (e)=>{
