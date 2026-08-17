@@ -223,6 +223,7 @@
     <div class="nav-item" data-view="linhas"><span class="ic">☏</span>Linhas WhatsApp</div>
     <div class="nav-group-label" id="nav-group-supervisor" style="display:none;">Supervisão</div>
     <div class="nav-item" data-view="supervisao" id="nav-supervisao" style="display:none;"><span class="ic">🛡</span>Todos os atendimentos</div>
+    <div class="nav-item" data-view="agentes" id="nav-agentes" style="display:none;"><span class="ic">👤</span>Agentes</div>
     <div class="sidebar-footer">
       <div class="agent-chip">
         <div class="agent-avatar" id="agent-avatar">--</div>
@@ -302,6 +303,8 @@
           </div>
           <button class="btn btn-primary btn-sm" id="btn-filtrar-historico">Filtrar</button>
           <button class="btn btn-ghost btn-sm" id="btn-limpar-historico">Limpar</button>
+          <button class="btn btn-ghost btn-sm" id="btn-pdf-historico">⬇ PDF</button>
+          <button class="btn btn-ghost btn-sm" id="btn-excel-historico">⬇ Excel</button>
         </div>
         <div id="historico-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
       </div>
@@ -319,6 +322,7 @@
         </div>
         <div class="card card-pad">
           <p class="section-title">Linhas cadastradas</p>
+          <p class="section-sub">Editar, ativar/inativar ou excluir (linhas com histórico não podem ser excluídas — inative-as).</p>
           <div id="linhas-list-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
         </div>
       </div>
@@ -350,8 +354,19 @@
           </div>
           <button class="btn btn-primary btn-sm" id="btn-filtrar-supervisao">Filtrar</button>
           <button class="btn btn-ghost btn-sm" id="btn-limpar-supervisao">Limpar</button>
+          <button class="btn btn-ghost btn-sm" id="btn-pdf-supervisao">⬇ PDF</button>
+          <button class="btn btn-ghost btn-sm" id="btn-excel-supervisao">⬇ Excel</button>
         </div>
         <div id="supervisao-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
+      </div>
+    </section>
+
+    <!-- ---------- AGENTES (somente admin) ---------- -->
+    <section class="view" id="view-agentes">
+      <div class="topbar"><div><h1>Agentes</h1><p>Equipe com acesso à central. Contas novas são criadas no painel do Supabase (Authentication → Users); aqui você gerencia status e papel.</p></div></div>
+      <div class="card card-pad">
+        <div id="agentes-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
+        <p class="hint" style="margin-top:14px;">Para adicionar um novo agente: Supabase → Authentication → Users → Add user (marque "Auto Confirm User"). O perfil aparece aqui automaticamente assim que o registro é criado.</p>
       </div>
     </section>
 
@@ -377,6 +392,11 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- Geração de PDF e Excel para as listagens (Histórico / Supervisão / protocolo individual) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -391,6 +411,8 @@ let sb = null;
 let currentAgente = null;
 let linhasCache = [];
 let agentesCache = [];
+let historicoDataAtual = [];
+let supervisaoDataAtual = [];
 
 async function iniciarSupabase(){
   const errBox = $('#login-error');
@@ -492,6 +514,14 @@ async function afterLogin(session){
   const { data: agente } = await sb.from('agentes').select('*').eq('id', user.id).single();
   currentAgente = agente || { id:user.id, nome:user.email, email:user.email };
 
+  if(currentAgente.ativo === false){
+    await sb.auth.signOut();
+    const errBox = $('#login-error');
+    errBox.textContent = 'Este acesso está inativo. Fale com um supervisor para reativá-lo.';
+    errBox.style.display = 'block';
+    return;
+  }
+
   $('#agent-name').textContent = currentAgente.nome;
   $('#agent-email').textContent = currentAgente.email;
   $('#agent-avatar').textContent = iniciais(currentAgente.nome);
@@ -499,6 +529,7 @@ async function afterLogin(session){
   if(currentAgente.is_admin){
     $('#nav-group-supervisor').style.display = 'block';
     $('#nav-supervisao').style.display = 'flex';
+    $('#nav-agentes').style.display = 'flex';
     $('#agent-role-badge').textContent = '· Supervisor';
     await carregarAgentesParaFiltro();
   }
@@ -527,6 +558,7 @@ function switchView(view){
   if(view==='historico') renderHistorico();
   if(view==='linhas') renderLinhas();
   if(view==='supervisao') renderSupervisao();
+  if(view==='agentes') renderAgentes();
 }
 
 // ---------------- LINHAS ----------------
@@ -559,14 +591,68 @@ async function renderLinhas(){
   if(error){ wrap.innerHTML = `<p class="hint">Erro ao carregar linhas.</p>`; return; }
   if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">☏</div>Nenhuma linha cadastrada ainda.</div>`; return; }
   wrap.innerHTML = data.map(l=>`
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
       <div>
-        <div style="font-weight:600;font-size:13.5px;">${l.nome}</div>
+        <div style="font-weight:600;font-size:13.5px;">${escapeHtml(l.nome)}</div>
         <div class="mono" style="font-size:12px;color:var(--text-muted);">+${l.numero}</div>
       </div>
-      <span class="badge ${l.ativo?'badge-encerrado':'badge-aberto'}">${l.ativo?'Ativa':'Inativa'}</span>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+        <span class="badge ${l.ativo?'badge-encerrado':'badge-aberto'}">${l.ativo?'Ativa':'Inativa'}</span>
+        <button class="btn btn-ghost btn-sm" data-edit-linha="${l.id}">Editar</button>
+        <button class="btn btn-ghost btn-sm" data-toggle-linha="${l.id}">${l.ativo?'Inativar':'Ativar'}</button>
+        <button class="btn btn-danger-ghost btn-sm" data-del-linha="${l.id}">Excluir</button>
+      </div>
     </div>
   `).join('');
+
+  wrap.querySelectorAll('[data-edit-linha]').forEach(btn=>{
+    const l = data.find(x=>x.id===btn.dataset.editLinha);
+    btn.addEventListener('click', ()=> editarLinha(l));
+  });
+  wrap.querySelectorAll('[data-toggle-linha]').forEach(btn=>{
+    const l = data.find(x=>x.id===btn.dataset.toggleLinha);
+    btn.addEventListener('click', ()=> alternarAtivoLinha(l));
+  });
+  wrap.querySelectorAll('[data-del-linha]').forEach(btn=>{
+    const l = data.find(x=>x.id===btn.dataset.delLinha);
+    btn.addEventListener('click', ()=> excluirLinha(l));
+  });
+}
+
+async function editarLinha(linha){
+  const novoNome = prompt('Nome da linha:', linha.nome);
+  if(novoNome === null) return;
+  const novoNumero = prompt('Número (com DDI e DDD, só dígitos):', linha.numero);
+  if(novoNumero === null) return;
+  const { error } = await sb.from('linhas').update({
+    nome: novoNome.trim() || linha.nome,
+    numero: soDigitos(novoNumero) || linha.numero
+  }).eq('id', linha.id);
+  if(error){ toast('Erro ao editar linha: '+error.message); return; }
+  toast('Linha atualizada.');
+  await carregarLinhas();
+  renderLinhas();
+}
+
+async function alternarAtivoLinha(linha){
+  const { error } = await sb.from('linhas').update({ ativo: !linha.ativo }).eq('id', linha.id);
+  if(error){ toast('Erro ao atualizar status: '+error.message); return; }
+  toast(linha.ativo ? 'Linha inativada.' : 'Linha ativada.');
+  await carregarLinhas();
+  renderLinhas();
+}
+
+async function excluirLinha(linha){
+  if(!confirm(`Excluir definitivamente a linha "${linha.nome}"? Isso só é possível se ela nunca recebeu atendimentos.`)) return;
+  const { error } = await sb.from('linhas').delete().eq('id', linha.id);
+  if(error){
+    // violação de FK: existem atendimentos ligados a esta linha (preservados para auditoria)
+    toast('Esta linha tem atendimentos vinculados e não pode ser excluída — use "Inativar" em vez de excluir.');
+    return;
+  }
+  toast('Linha excluída.');
+  await carregarLinhas();
+  renderLinhas();
 }
 
 // ---------------- NOVO ATENDIMENTO ----------------
@@ -723,9 +809,65 @@ async function renderSupervisao(){
 
   const { data, error } = await q;
   if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar. Confirme que este usuário está marcado como Supervisor (is_admin) no banco.</p>'; return; }
-  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>Nenhum resultado para os filtros aplicados.</div>`; return; }
+  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>Nenhum resultado para os filtros aplicados.</div>`; supervisaoDataAtual = []; return; }
+  supervisaoDataAtual = data;
   wrap.innerHTML = tabelaAtendimentos(data, {mostrarAgente:true});
   bindRowClicks(wrap);
+}
+
+$('#btn-pdf-supervisao')?.addEventListener('click', ()=> exportarPDF(supervisaoDataAtual, 'Supervisão — todos os atendimentos', true));
+$('#btn-excel-supervisao')?.addEventListener('click', ()=> exportarExcel(supervisaoDataAtual, 'supervisao_atendimentos', true));
+
+// ---------------- AGENTES (somente admin) ----------------
+async function renderAgentes(){
+  const wrap = $('#agentes-table-wrap');
+  const { data, error } = await sb.from('agentes').select('*').order('nome');
+  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar agentes.</p>'; return; }
+  agentesCache = data || [];
+  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">👤</div>Nenhum agente encontrado.</div>`; return; }
+
+  wrap.innerHTML = `<table><thead><tr>
+      <th>Nome</th><th>E-mail</th><th>Papel</th><th>Status</th><th></th>
+    </tr></thead><tbody>
+    ${data.map(a=>`
+      <tr>
+        <td style="font-weight:600;">${escapeHtml(a.nome)}</td>
+        <td class="mono" style="font-size:12.5px;">${escapeHtml(a.email)}</td>
+        <td>${a.is_admin ? '<span class="badge badge-transferido">Supervisor</span>' : '<span class="badge badge-em_andamento">Agente</span>'}</td>
+        <td>${a.ativo ? '<span class="badge badge-encerrado">Ativo</span>' : '<span class="badge badge-aberto">Inativo</span>'}</td>
+        <td style="text-align:right;white-space:nowrap;">
+          <button class="btn btn-ghost btn-sm" data-toggle-admin="${a.id}">${a.is_admin?'Remover supervisor':'Tornar supervisor'}</button>
+          <button class="btn btn-ghost btn-sm" data-toggle-ativo="${a.id}">${a.ativo?'Inativar':'Ativar'}</button>
+        </td>
+      </tr>`).join('')}
+    </tbody></table>`;
+
+  wrap.querySelectorAll('[data-toggle-admin]').forEach(btn=>{
+    const ag = data.find(x=>x.id===btn.dataset.toggleAdmin);
+    btn.addEventListener('click', ()=> alternarAdminAgente(ag));
+  });
+  wrap.querySelectorAll('[data-toggle-ativo]').forEach(btn=>{
+    const ag = data.find(x=>x.id===btn.dataset.toggleAtivo);
+    btn.addEventListener('click', ()=> alternarAtivoAgente(ag));
+  });
+}
+
+async function alternarAdminAgente(agente){
+  if(agente.id === currentAgente.id){ toast('Você não pode alterar seu próprio papel de supervisor.'); return; }
+  const acao = agente.is_admin ? 'remover o papel de Supervisor de' : 'tornar Supervisor';
+  if(!confirm(`Confirma ${acao} ${agente.nome}?`)) return;
+  const { error } = await sb.from('agentes').update({ is_admin: !agente.is_admin }).eq('id', agente.id);
+  if(error){ toast('Erro: '+error.message); return; }
+  toast('Papel atualizado.');
+  renderAgentes();
+}
+
+async function alternarAtivoAgente(agente){
+  if(agente.id === currentAgente.id){ toast('Você não pode inativar a própria conta.'); return; }
+  const { error } = await sb.from('agentes').update({ ativo: !agente.ativo }).eq('id', agente.id);
+  if(error){ toast('Erro: '+error.message); return; }
+  toast(agente.ativo ? 'Agente inativado.' : 'Agente ativado.');
+  renderAgentes();
 }
 
 
@@ -755,9 +897,107 @@ async function renderHistorico(){
 
   const { data, error } = await q;
   if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar histórico.</p>'; return; }
-  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>Nenhum resultado para os filtros aplicados.</div>`; return; }
+  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>Nenhum resultado para os filtros aplicados.</div>`; historicoDataAtual = []; return; }
+  historicoDataAtual = data;
   wrap.innerHTML = tabelaAtendimentos(data);
   bindRowClicks(wrap);
+}
+
+$('#btn-pdf-historico').addEventListener('click', ()=> exportarPDF(historicoDataAtual, 'Meu histórico de atendimentos', false));
+$('#btn-excel-historico').addEventListener('click', ()=> exportarExcel(historicoDataAtual, 'meu_historico_atendimentos', false));
+
+// ---------------- EXPORTAÇÃO PDF / EXCEL ----------------
+const STATUS_LABEL = {aberto:'Aberto', em_andamento:'Em andamento', transferido:'Transferido', encerrado:'Encerrado'};
+
+function exportarExcel(dados, nomeArquivo, comAgente){
+  if(!dados || !dados.length){ toast('Nada para exportar — ajuste os filtros.'); return; }
+  const linhas = dados.map(a=>{
+    const linha = {
+      'Protocolo': a.protocolo,
+      'Cliente': a.cliente_nome,
+      'WhatsApp': '+'+a.cliente_telefone,
+      'Equipamento': a.equipamento || '',
+      'Linha': a.linhas?.nome || ''
+    };
+    if(comAgente) linha['Agente'] = a.agentes?.nome || '';
+    linha['Status'] = STATUS_LABEL[a.status] || a.status;
+    linha['Criado em'] = fmtData(a.criado_em);
+    return linha;
+  });
+  const ws = XLSX.utils.json_to_sheet(linhas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Atendimentos');
+  XLSX.writeFile(wb, nomeArquivo + '_' + new Date().toISOString().slice(0,10) + '.xlsx');
+}
+
+function exportarPDF(dados, titulo, comAgente){
+  if(!dados || !dados.length){ toast('Nada para exportar — ajuste os filtros.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape' });
+  doc.setFontSize(14);
+  doc.text(titulo, 14, 16);
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text('Gerado em ' + new Date().toLocaleString('pt-BR') + ' · ' + dados.length + ' protocolo(s)', 14, 22);
+
+  const head = comAgente
+    ? [['Protocolo','Cliente','WhatsApp','Linha','Agente','Status','Criado em']]
+    : [['Protocolo','Cliente','WhatsApp','Linha','Status','Criado em']];
+
+  const body = dados.map(a=>{
+    const row = [a.protocolo, a.cliente_nome, '+'+a.cliente_telefone, a.linhas?.nome || '—'];
+    if(comAgente) row.push(a.agentes?.nome || '—');
+    row.push(STATUS_LABEL[a.status] || a.status, fmtData(a.criado_em));
+    return row;
+  });
+
+  doc.autoTable({
+    head, body, startY: 28, styles:{ fontSize: 8, cellPadding: 3 },
+    headStyles:{ fillColor: [15,110,99] }
+  });
+
+  doc.save(titulo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_') + '_' + new Date().toISOString().slice(0,10) + '.pdf');
+}
+
+async function exportarProtocoloPDF(atendimento, interacoes){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.setFontSize(15);
+  doc.text('Protocolo ' + atendimento.protocolo, 14, 18);
+  doc.setFontSize(10);
+  doc.setTextColor(90);
+  doc.text('Gerado em ' + new Date().toLocaleString('pt-BR'), 14, 25);
+
+  doc.setFontSize(10);
+  doc.setTextColor(20);
+  const infoLinhas = [
+    ['Cliente', atendimento.cliente_nome],
+    ['WhatsApp', '+'+atendimento.cliente_telefone],
+    ['Equipamento', atendimento.equipamento || '—'],
+    ['Linha', atendimento.linhas?.nome || '—'],
+    ['Agente responsável', atendimento.agentes?.nome || '—'],
+    ['Status', STATUS_LABEL[atendimento.status] || atendimento.status],
+    ['Problema inicial', atendimento.descricao_problema || '—']
+  ];
+  doc.autoTable({
+    startY: 32, theme:'plain', styles:{ fontSize: 9, cellPadding: 2 },
+    body: infoLinhas, columnStyles: { 0:{ fontStyle:'bold', cellWidth: 45 } }
+  });
+
+  const y0 = doc.lastAutoTable.finalY + 8;
+  doc.setFontSize(11);
+  doc.text('Histórico de procedimentos', 14, y0);
+
+  const body = (interacoes||[]).map(i=>[
+    fmtData(i.criado_em), i.tipo.replace('_',' '), i.agentes?.nome||'—', i.conteudo
+  ]);
+  doc.autoTable({
+    startY: y0+4, head:[['Data','Tipo','Agente','Conteúdo']], body,
+    styles:{ fontSize: 8, cellPadding: 3 }, headStyles:{ fillColor:[15,110,99] },
+    columnStyles: { 3:{ cellWidth: 90 } }
+  });
+
+  doc.save('protocolo_' + atendimento.protocolo.toLowerCase() + '.pdf');
 }
 
 // ---------------- DETALHE / MODAL ----------------
@@ -815,6 +1055,7 @@ async function abrirDetalhe(id){
       <a class="btn btn-whatsapp btn-sm" target="_blank" href="${waLink(atendimento.cliente_telefone,'Olá '+atendimento.cliente_nome+', tudo bem? Sobre o protocolo '+atendimento.protocolo+': ')}">Abrir WhatsApp do cliente</a>
       ${atendimento.status!=='encerrado' ? `<button class="btn btn-ghost btn-sm" id="btn-encerrar">Encerrar atendimento</button>`:''}
       <button class="btn btn-ghost btn-sm" id="btn-transferir">Transferir / reenviar histórico</button>
+      <button class="btn btn-ghost btn-sm" id="btn-exportar-pdf-protocolo">⬇ Exportar PDF</button>
     </div>
 
     <p class="section-title" style="margin-bottom:10px;">Registrar novo procedimento</p>
@@ -833,6 +1074,7 @@ async function abrirDetalhe(id){
   const btnEnc = $('#btn-encerrar');
   if(btnEnc) btnEnc.addEventListener('click', ()=> encerrarAtendimento(atendimento));
   $('#btn-transferir').addEventListener('click', ()=> abrirTransferencia(atendimento, interacoes||[]));
+  $('#btn-exportar-pdf-protocolo').addEventListener('click', ()=> exportarProtocoloPDF(atendimento, interacoes||[]));
   const btnReat = $('#btn-reatribuir');
   if(btnReat) btnReat.addEventListener('click', ()=> reatribuirAtendimento(atendimento));
 }
