@@ -445,6 +445,15 @@ function toast(msg){
   setTimeout(()=>t.classList.remove('show'), 2600);
 }
 
+// versão segura de "setar texto": não quebra a aplicação se, por algum
+// motivo (versão desatualizada do HTML publicado, etc.), o elemento
+// não existir no DOM — só avisa no console em vez de lançar exceção.
+function setText(sel, text){
+  const el = $(sel);
+  if(!el){ console.warn('[ui] elemento não encontrado:', sel); return; }
+  el.textContent = text;
+}
+
 function soDigitos(v){ return (v||'').replace(/\D/g,''); }
 
 function waLink(numero, texto){
@@ -524,15 +533,15 @@ async function afterLogin(session){
       return;
     }
 
-    $('#agent-name').textContent = currentAgente.nome;
-    $('#agent-email').textContent = currentAgente.email;
-    $('#agent-avatar').textContent = iniciais(currentAgente.nome);
+    setText('#agent-name', currentAgente.nome);
+    setText('#agent-email', currentAgente.email);
+    setText('#agent-avatar', iniciais(currentAgente.nome));
 
     if(currentAgente.is_admin){
-      $('#nav-group-supervisor').style.display = 'block';
-      $('#nav-supervisao').style.display = 'flex';
-      $('#nav-agentes').style.display = 'flex';
-      $('#agent-role-badge').textContent = '· Supervisor';
+      const grp = $('#nav-group-supervisor'); if(grp) grp.style.display = 'block';
+      const navSup = $('#nav-supervisao'); if(navSup) navSup.style.display = 'flex';
+      const navAg = $('#nav-agentes'); if(navAg) navAg.style.display = 'flex';
+      setText('#agent-role-badge', '· Supervisor');
       try{
         await carregarAgentesParaFiltro();
       }catch(e){
