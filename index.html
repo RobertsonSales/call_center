@@ -31,6 +31,10 @@
     --radius:12px;
     --radius-sm:8px;
     --shadow:0 1px 2px rgba(16,29,46,.06), 0 8px 24px -12px rgba(16,29,46,.12);
+    --input-bg:#FCFDFE;
+    --input-bg-focus:#FFFFFF;
+    --input-text:#16212E;
+    --input-placeholder:#8B98A8;
   }
   [data-theme="dark"]{
     --bg:#0C1119;
@@ -49,6 +53,10 @@
     --warning-light:#3A2E15;
     --info-light:#152A3D;
     --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+    --input-bg:#1A2432;
+    --input-bg-focus:#212D3D;
+    --input-text:#F2F6FA;
+    --input-placeholder:#71829A;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -84,11 +92,13 @@
   .field label{display:block;font-size:12.5px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;}
   .field input,.field select,.field textarea{
     width:100%;padding:11px 13px;border:1.5px solid var(--border);border-radius:var(--radius-sm);
-    font-size:14.5px;color:var(--text);background:#FCFDFE;transition:border-color .15s,box-shadow .15s;
+    font-size:14.5px;color:var(--input-text);background:var(--input-bg);transition:border-color .15s,box-shadow .15s,background-color .15s;
   }
+  .field input::placeholder,.field textarea::placeholder{ color:var(--input-placeholder); }
   .field input:focus,.field select:focus,.field textarea:focus{
-    outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-light);background:#fff;
+    outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-light);background:var(--input-bg-focus);
   }
+  .field select option{ color:#16212E; background:#FFFFFF; }
   .btn{
     display:inline-flex;align-items:center;justify-content:center;gap:8px;
     padding:11px 18px;border-radius:var(--radius-sm);border:none;font-weight:600;font-size:14px;
@@ -248,7 +258,7 @@
   .modal-close{background:var(--bg);border:none;width:28px;height:28px;border-radius:50%;font-size:15px;color:var(--text-muted);}
   .modal-body{padding:18px 24px 26px;}
 
-  .interacao-item{padding:12px 14px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:#FCFDFE;}
+  .interacao-item{padding:12px 14px;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:var(--bg);}
   .interacao-item .top{display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:6px;}
   .interacao-item .tipo-tag{font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:10px;}
   .interacao-item p{margin:0;font-size:13.5px;line-height:1.5;white-space:pre-wrap;}
@@ -296,6 +306,7 @@
     <div class="nav-item" data-view="historico"><span class="ic">⏱</span>Histórico &amp; Auditoria</div>
     <div class="nav-group-label">Configuração</div>
     <div class="nav-item" data-view="linhas"><span class="ic">☏</span>Linhas WhatsApp</div>
+    <div class="nav-item" data-view="catalogo"><span class="ic">🏥</span>Clientes &amp; Equipamentos</div>
     <div class="nav-group-label" id="nav-group-supervisor" style="display:none;">Supervisão</div>
     <div class="nav-item" data-view="supervisao" id="nav-supervisao" style="display:none;"><span class="ic">🛡</span>Todos os atendimentos</div>
     <div class="nav-item" data-view="agentes" id="nav-agentes" style="display:none;"><span class="ic">👤</span>Agentes</div>
@@ -315,7 +326,13 @@
 
     <!-- ---------- DASHBOARD ---------- -->
     <section class="view active" id="view-dashboard">
-      <div class="topbar"><div><h1>Meu painel</h1><p>Visão consolidada dos protocolos que você atende.</p></div></div>
+      <div class="topbar">
+        <div><h1>Meu painel</h1><p>Visão consolidada dos protocolos que você atende.</p></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" id="btn-abrir-busca">🔍 Buscar cliente/equipamento</button>
+          <button class="btn btn-primary btn-sm" id="btn-atalho-novo">＋ Novo atendimento</button>
+        </div>
+      </div>
       <div class="grid-3" style="margin-bottom:22px;">
         <div class="card stat-card"><div class="stat-num" id="stat-abertos">–</div><div class="stat-label">Em aberto</div></div>
         <div class="card stat-card"><div class="stat-num" id="stat-andamento">–</div><div class="stat-label">Em andamento</div></div>
@@ -336,13 +353,18 @@
           <div class="field"><label>Linha que recebeu o chamado</label>
             <select id="f-linha"></select>
           </div>
-          <div class="field"><label>Nome do cliente</label><input id="f-nome" placeholder="Ex: Clínica Vida Nova"/></div>
+          <div class="field"><label>Unidade do cliente</label><input id="f-nome" placeholder="Ex: Clínica Vida Nova"/></div>
+          <div class="field"><label>Cliente (grupo/razão social, opcional)</label><input id="f-cliente-grupo" placeholder="Ex: Rede Vida Nova Saúde Ltda"/></div>
           <div class="field"><label>WhatsApp do cliente (celular)</label>
             <div class="phone-group"><span class="phone-prefix">+55</span><input id="f-telefone" inputmode="numeric" placeholder="(21) 98888-7777"/></div>
           </div>
           <div class="field"><label>Equipamento</label><input id="f-equipamento" placeholder="Ex: Analisador Bioquímico X200"/></div>
           <div class="field"><label>Descrição inicial do problema</label><textarea id="f-descricao" rows="3" placeholder="Ex: equipamento não liga após queda de energia"></textarea></div>
-          <button class="btn btn-primary btn-block" id="btn-criar-atendimento">Gerar protocolo</button>
+          <div class="hint" id="catalogo-selecionado-hint" style="display:none;margin-bottom:10px;"></div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" style="flex:1;" id="btn-criar-atendimento">Gerar protocolo</button>
+            <button class="btn btn-ghost" id="btn-cancelar-novo">Cancelar</button>
+          </div>
         </div>
         <div class="card card-pad" id="novo-preview">
           <p class="section-title">Prévia da mensagem inicial</p>
@@ -403,6 +425,43 @@
           <p class="section-title">Linhas cadastradas</p>
           <p class="section-sub">Editar, ativar/inativar ou excluir (linhas com histórico não podem ser excluídas — inative-as).</p>
           <div id="linhas-list-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- CLIENTES & EQUIPAMENTOS ---------- -->
+    <section class="view" id="view-catalogo">
+      <div class="topbar"><div><h1>Clientes &amp; Equipamentos</h1><p>Catálogo usado na busca inteligente ao abrir um atendimento. Consulta liberada a todos; cadastro é do Supervisor.</p></div></div>
+
+      <div class="grid-2" id="catalogo-forms" style="display:none;margin-bottom:16px;">
+        <div class="card card-pad">
+          <p class="section-title">Novo cliente</p>
+          <div class="field"><label>Unidade (nome operacional)</label><input id="fc-nome" placeholder="Ex: Hospital São Lucas — Unidade Barra"/></div>
+          <div class="field"><label>Cliente (grupo/razão social, opcional)</label><input id="fc-grupo" placeholder="Ex: Rede São Lucas Saúde Ltda"/></div>
+          <div class="field"><label>Categoria</label><input id="fc-categoria" placeholder="Ex: Hospital, Clínica, Laboratório"/></div>
+          <div class="field"><label>WhatsApp principal (opcional)</label>
+            <div class="phone-group"><span class="phone-prefix">+55</span><input id="fc-telefone" inputmode="numeric" placeholder="(21) 98888-7777"/></div>
+          </div>
+          <button class="btn btn-primary btn-block" id="btn-criar-cliente">Adicionar cliente</button>
+        </div>
+        <div class="card card-pad">
+          <p class="section-title">Novo equipamento</p>
+          <div class="field"><label>Nome</label><input id="fe-nome" placeholder="Ex: Analisador Bioquímico X200"/></div>
+          <div class="field"><label>Categoria</label><input id="fe-categoria" placeholder="Ex: Bioquímica, Hematologia"/></div>
+          <div class="field"><label>Cliente onde está instalado</label><select id="fe-cliente"></select></div>
+          <div class="field"><label>Número de série (opcional)</label><input id="fe-serie" placeholder="Ex: SN-88213"/></div>
+          <button class="btn btn-primary btn-block" id="btn-criar-equipamento">Adicionar equipamento</button>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card card-pad">
+          <p class="section-title">Clientes cadastrados</p>
+          <div id="clientes-list-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
+        </div>
+        <div class="card card-pad">
+          <p class="section-title">Equipamentos cadastrados</p>
+          <div id="equipamentos-list-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
         </div>
       </div>
     </section>
@@ -479,6 +538,40 @@
   </div>
 </div>
 
+<!-- ================= MODAL: BUSCA DE CLIENTES/EQUIPAMENTOS ================= -->
+<div class="overlay" id="modal-busca-overlay">
+  <div class="modal" style="max-width:720px;">
+    <div class="modal-head">
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Catálogo do Grupo</div>
+        <div class="proto-num" style="font-size:19px;">Buscar cliente / equipamento</div>
+      </div>
+      <button class="modal-close" id="modal-busca-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>Busca inteligente</label>
+        <input id="busca-texto" placeholder="Digite parte do nome do cliente, equipamento ou categoria…"/>
+      </div>
+      <div class="filters" style="margin-bottom:14px;">
+        <div class="field"><label>Cliente</label><select id="busca-cliente"><option value="">Todos</option></select></div>
+        <div class="field"><label>Categoria</label><select id="busca-categoria"><option value="">Todas</option></select></div>
+        <button class="btn btn-primary btn-sm" id="btn-executar-busca">Buscar</button>
+        <button class="btn btn-ghost btn-sm" id="btn-limpar-busca">Limpar</button>
+      </div>
+
+      <div id="busca-resultados"><p class="hint">Digite algo ou use os filtros e clique em "Buscar".</p></div>
+
+      <div id="busca-import-area" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
+        <p class="section-title" style="margin-bottom:8px;">Importar planilha de equipamentos (Supervisor)</p>
+        <p class="hint" style="margin-bottom:10px;">Aceita .xlsx com as colunas REGIÃO, CATEGORIA, UNIDADE, EQUIPAMENTO, SERIAL. Clientes e equipamentos existentes (mesmo nome/serial) são atualizados, não duplicados.</p>
+        <input type="file" id="input-importar-planilha" accept=".xlsx,.xls" style="display:none;"/>
+        <button class="btn btn-ghost btn-sm" id="btn-importar-planilha">📥 Importar planilha</button>
+        <div id="import-status" class="hint" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <!-- Geração de PDF e Excel para as listagens (Histórico / Supervisão / protocolo individual) -->
@@ -502,6 +595,8 @@ let linhasCache = [];
 let agentesCache = [];
 let historicoDataAtual = [];
 let supervisaoDataAtual = [];
+let catalogoSelecionado = { cliente_id: null, equipamento_id: null };
+let clientesCache = [];
 
 async function iniciarSupabase(){
   const errBox = $('#login-error');
@@ -738,6 +833,7 @@ function switchView(view){
   if(view==='linhas') renderLinhas();
   if(view==='supervisao') renderSupervisao();
   if(view==='agentes') renderAgentes();
+  if(view==='catalogo') renderCatalogo();
 }
 
 // ---------------- LINHAS ----------------
@@ -834,21 +930,325 @@ async function excluirLinha(linha){
   renderLinhas();
 }
 
+// ---------------- CLIENTES & EQUIPAMENTOS (catálogo) ----------------
+async function renderCatalogo(){
+  $('#catalogo-forms').style.display = currentAgente.is_admin ? 'grid' : 'none';
+  await Promise.all([renderClientes(), renderEquipamentos()]);
+  await popularSelectClientesEquipamento();
+}
+
+async function renderClientes(){
+  const wrap = $('#clientes-list-wrap');
+  const { data, error } = await sb.from('clientes').select('*').order('nome');
+  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar clientes.</p>'; return; }
+  clientesCache = data || [];
+  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🏥</div>Nenhum cliente cadastrado ainda.</div>`; return; }
+
+  wrap.innerHTML = `<div class="table-scroll" style="max-height:420px;overflow-y:auto;"><table><thead><tr>
+      <th>Unidade</th><th>Cliente</th><th>Categoria</th><th>Status</th>${currentAgente.is_admin?'<th></th>':''}
+    </tr></thead><tbody>
+    ${data.map(c=>`
+      <tr>
+        <td style="font-weight:600;">${escapeHtml(c.nome)}</td>
+        <td>${escapeHtml(c.cliente_grupo || '—')}</td>
+        <td>${escapeHtml(c.categoria || '—')}</td>
+        <td>${c.ativo ? '<span class="badge badge-encerrado">Ativo</span>' : '<span class="badge badge-aberto">Inativo</span>'}</td>
+        ${currentAgente.is_admin ? `<td style="text-align:right;white-space:nowrap;">
+          <button class="btn btn-ghost btn-sm" data-toggle-cliente="${c.id}">${c.ativo?'Inativar':'Ativar'}</button>
+        </td>` : ''}
+      </tr>`).join('')}
+    </tbody></table></div>`;
+
+  wrap.querySelectorAll('[data-toggle-cliente]').forEach(btn=>{
+    const c = data.find(x=>x.id===btn.dataset.toggleCliente);
+    btn.addEventListener('click', async ()=>{
+      const { error } = await sb.from('clientes').update({ ativo: !c.ativo }).eq('id', c.id);
+      if(error){ toast('Erro: '+error.message); return; }
+      renderClientes();
+    });
+  });
+}
+
+async function renderEquipamentos(){
+  const wrap = $('#equipamentos-list-wrap');
+  const { data, error } = await sb.from('equipamentos').select('*, clientes(nome)').order('nome').limit(300);
+  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar equipamentos.</p>'; return; }
+  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🩺</div>Nenhum equipamento cadastrado ainda.</div>`; return; }
+
+  wrap.innerHTML = `<div class="table-scroll" style="max-height:420px;overflow-y:auto;"><table><thead><tr>
+      <th>Equipamento</th><th>Categoria</th><th>Unidade</th><th>Série</th><th>Status</th>${currentAgente.is_admin?'<th></th>':''}
+    </tr></thead><tbody>
+    ${data.map(e=>`
+      <tr>
+        <td style="font-weight:600;">${escapeHtml(e.nome)}</td>
+        <td>${escapeHtml(e.categoria || '—')}</td>
+        <td>${escapeHtml(e.clientes?.nome || '—')}</td>
+        <td class="mono" style="font-size:12px;">${escapeHtml(e.numero_serie || '—')}</td>
+        <td>${e.ativo ? '<span class="badge badge-encerrado">Ativo</span>' : '<span class="badge badge-aberto">Inativo</span>'}</td>
+        ${currentAgente.is_admin ? `<td style="text-align:right;white-space:nowrap;">
+          <button class="btn btn-ghost btn-sm" data-toggle-equip="${e.id}">${e.ativo?'Inativar':'Ativar'}</button>
+        </td>` : ''}
+      </tr>`).join('')}
+    </tbody></table></div>${data.length>=300?'<p class="hint">Mostrando os 300 primeiros — use a busca inteligente no painel para localizar itens específicos.</p>':''}`;
+
+  wrap.querySelectorAll('[data-toggle-equip]').forEach(btn=>{
+    const e = data.find(x=>x.id===btn.dataset.toggleEquip);
+    btn.addEventListener('click', async ()=>{
+      const { error } = await sb.from('equipamentos').update({ ativo: !e.ativo }).eq('id', e.id);
+      if(error){ toast('Erro: '+error.message); return; }
+      renderEquipamentos();
+    });
+  });
+}
+
+async function popularSelectClientesEquipamento(){
+  const sel = $('#fe-cliente');
+  if(sel) sel.innerHTML = clientesCache.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('') || '<option value="">Cadastre um cliente primeiro</option>';
+}
+
+$('#btn-criar-cliente')?.addEventListener('click', async ()=>{
+  const nome = $('#fc-nome').value.trim();
+  const cliente_grupo = $('#fc-grupo').value.trim();
+  const categoria = $('#fc-categoria').value.trim();
+  const telefone = $('#fc-telefone').value.trim() ? comDDI55($('#fc-telefone').value) : null;
+  if(!nome){ toast('Informe o nome da unidade.'); return; }
+  const { error } = await sb.from('clientes').insert({ nome, cliente_grupo: cliente_grupo||null, categoria: categoria||null, telefone });
+  if(error){ toast('Erro ao criar cliente: '+(error.message.includes('duplicate')?'já existe um cliente com esse nome.':error.message)); return; }
+  toast('Cliente cadastrado.');
+  $('#fc-nome').value=''; $('#fc-grupo').value=''; $('#fc-categoria').value=''; $('#fc-telefone').value='';
+  await renderClientes();
+  await popularSelectClientesEquipamento();
+});
+
+$('#btn-criar-equipamento')?.addEventListener('click', async ()=>{
+  const nome = $('#fe-nome').value.trim();
+  const categoria = $('#fe-categoria').value.trim();
+  const cliente_id = $('#fe-cliente').value || null;
+  const numero_serie = $('#fe-serie').value.trim() || null;
+  if(!nome){ toast('Informe o nome do equipamento.'); return; }
+  const { error } = await sb.from('equipamentos').insert({ nome, categoria: categoria||null, cliente_id, numero_serie });
+  if(error){ toast('Erro ao criar equipamento: '+(error.message.includes('duplicate')?'já existe um equipamento com esse número de série.':error.message)); return; }
+  toast('Equipamento cadastrado.');
+  $('#fe-nome').value=''; $('#fe-categoria').value=''; $('#fe-serie').value='';
+  await renderEquipamentos();
+});
+
+// ---------------- BUSCA INTELIGENTE (modal do painel) ----------------
+async function abrirBuscaCatalogo(){
+  $('#modal-busca-overlay').classList.add('active');
+  $('#busca-import-area').style.display = currentAgente.is_admin ? 'block' : 'none';
+  await carregarFiltrosBusca();
+}
+function fecharBuscaCatalogo(){ $('#modal-busca-overlay').classList.remove('active'); }
+
+$('#btn-abrir-busca')?.addEventListener('click', abrirBuscaCatalogo);
+$('#btn-atalho-novo')?.addEventListener('click', ()=> switchView('novo'));
+$('#modal-busca-close')?.addEventListener('click', fecharBuscaCatalogo);
+$('#modal-busca-overlay')?.addEventListener('click', (e)=>{ if(e.target.id==='modal-busca-overlay') fecharBuscaCatalogo(); });
+
+async function carregarFiltrosBusca(){
+  const { data: clientes } = await sb.from('clientes').select('id, nome').eq('ativo', true).order('nome');
+  const selCliente = $('#busca-cliente');
+  selCliente.innerHTML = '<option value="">Todos</option>' + (clientes||[]).map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('');
+
+  const { data: equips } = await sb.from('equipamentos').select('categoria').not('categoria','is',null);
+  const categorias = [...new Set((equips||[]).map(e=>e.categoria).filter(Boolean))].sort();
+  const selCategoria = $('#busca-categoria');
+  selCategoria.innerHTML = '<option value="">Todas</option>' + categorias.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+}
+
+$('#btn-executar-busca')?.addEventListener('click', executarBusca);
+$('#busca-texto')?.addEventListener('keydown', e=>{ if(e.key==='Enter') executarBusca(); });
+$('#btn-limpar-busca')?.addEventListener('click', ()=>{
+  $('#busca-texto').value=''; $('#busca-cliente').value=''; $('#busca-categoria').value='';
+  $('#busca-resultados').innerHTML = '<p class="hint">Digite algo ou use os filtros e clique em "Buscar".</p>';
+});
+
+async function executarBusca(){
+  const wrap = $('#busca-resultados');
+  wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Buscando…</div>';
+
+  const texto = $('#busca-texto').value.trim();
+  const clienteId = $('#busca-cliente').value;
+  const categoria = $('#busca-categoria').value;
+
+  let q = sb.from('equipamentos').select('*, clientes(id, nome, cliente_grupo, telefone)').eq('ativo', true).limit(40);
+  if(clienteId) q = q.eq('cliente_id', clienteId);
+  if(categoria) q = q.eq('categoria', categoria);
+  if(texto) q = q.or(`nome.ilike.%${texto}%,categoria.ilike.%${texto}%,numero_serie.ilike.%${texto}%`);
+
+  const { data, error } = await q;
+  let resultados = data || [];
+
+  // a busca por texto também precisa achar por nome do CLIENTE/unidade,
+  // o que o "or" acima (só nas colunas de equipamentos) não cobre —
+  // então complementamos com uma segunda consulta quando há texto.
+  if(texto && !clienteId){
+    const { data: porCliente } = await sb.from('equipamentos')
+      .select('*, clientes!inner(id, nome, cliente_grupo, telefone)')
+      .eq('ativo', true)
+      .or(`nome.ilike.%${texto}%,cliente_grupo.ilike.%${texto}%`, { foreignTable: 'clientes' })
+      .limit(40);
+    if(porCliente) resultados = [...resultados, ...porCliente.filter(r=>!resultados.some(x=>x.id===r.id))];
+  }
+
+  if(error){ wrap.innerHTML = '<p class="hint">Erro na busca: '+error.message+'</p>'; return; }
+  if(!resultados.length){ wrap.innerHTML = '<div class="empty-state"><div class="ic">🔍</div>Nada encontrado.</div>'; return; }
+
+  wrap.innerHTML = resultados.slice(0,40).map(e=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
+      <div>
+        <div style="font-weight:600;font-size:13.5px;">${escapeHtml(e.nome)} ${e.categoria?`<span class="badge badge-em_andamento">${escapeHtml(e.categoria)}</span>`:''}</div>
+        <div style="font-size:12.5px;color:var(--text-muted);">${escapeHtml(e.clientes?.nome || '—')}${e.clientes?.cliente_grupo ? ' · '+escapeHtml(e.clientes.cliente_grupo) : ''}${e.numero_serie ? ' · série '+escapeHtml(e.numero_serie) : ''}</div>
+      </div>
+      <button class="btn btn-primary btn-sm" data-usar-equip="${e.id}">Usar neste atendimento</button>
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('[data-usar-equip]').forEach(btn=>{
+    const e = resultados.find(x=>x.id===btn.dataset.usarEquip);
+    btn.addEventListener('click', ()=> selecionarDoCatalogo(e));
+  });
+}
+
+function selecionarDoCatalogo(equip){
+  catalogoSelecionado = { cliente_id: equip.clientes?.id || null, equipamento_id: equip.id };
+  $('#f-nome').value = equip.clientes?.nome || '';
+  $('#f-cliente-grupo').value = equip.clientes?.cliente_grupo || '';
+  $('#f-equipamento').value = equip.nome || '';
+  if(equip.clientes?.telefone){
+    $('#f-telefone').value = formatarCelularBR(equip.clientes.telefone.replace(/^55/, ''));
+  }
+  const hint = $('#catalogo-selecionado-hint');
+  hint.style.display = 'block';
+  hint.textContent = `✓ Selecionado do catálogo: ${equip.nome} — ${equip.clientes?.nome || ''}`;
+  fecharBuscaCatalogo();
+  switchView('novo');
+  toast('Dados do catálogo preenchidos no formulário.');
+}
+
+// ---------------- IMPORTAÇÃO DE PLANILHA (Supervisor) ----------------
+$('#btn-importar-planilha')?.addEventListener('click', ()=> $('#input-importar-planilha').click());
+$('#input-importar-planilha')?.addEventListener('change', async (e)=>{
+  const file = e.target.files[0];
+  if(file) await importarPlanilhaEquipamentos(file);
+  e.target.value = '';
+});
+
+async function importarPlanilhaEquipamentos(file){
+  const status = $('#import-status');
+  status.textContent = 'Lendo arquivo…';
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const linhas = XLSX.utils.sheet_to_json(ws, { defval: null });
+
+    if(!linhas.length){ status.textContent = 'Planilha vazia.'; return; }
+
+    // ---- 1) monta a lista única de clientes (Unidade + Cliente) ----
+    const clientesMap = new Map(); // nome (Unidade) -> {nome, cliente_grupo}
+    for(const l of linhas){
+      const unidade = (l['UNIDADE']||'').toString().trim();
+      if(!unidade) continue;
+      const grupo = (l['CLIENTE']||'').toString().trim() || null;
+      if(!clientesMap.has(unidade)) clientesMap.set(unidade, { nome: unidade, cliente_grupo: grupo });
+    }
+    const listaClientes = [...clientesMap.values()];
+    status.textContent = `Gravando ${listaClientes.length} clientes/unidades…`;
+
+    let clienteIdPorNome = new Map();
+    for(let i=0; i<listaClientes.length; i+=300){
+      const lote = listaClientes.slice(i, i+300);
+      const { data, error } = await sb.from('clientes').upsert(lote, { onConflict: 'nome' }).select('id, nome');
+      if(error){ status.textContent = 'Erro ao gravar clientes: '+error.message; return; }
+      (data||[]).forEach(c => clienteIdPorNome.set(c.nome, c.id));
+    }
+    // upsert só retorna as linhas afetadas na própria chamada; se algum
+    // nome já existia de antes (não afetado nesta rodada) buscamos os ids que faltarem
+    const faltando = listaClientes.map(c=>c.nome).filter(n=>!clienteIdPorNome.has(n));
+    if(faltando.length){
+      const { data } = await sb.from('clientes').select('id, nome').in('nome', faltando);
+      (data||[]).forEach(c => clienteIdPorNome.set(c.nome, c.id));
+    }
+
+    // ---- 2) monta a lista de equipamentos ----
+    const listaEquip = [];
+    for(const l of linhas){
+      const unidade = (l['UNIDADE']||'').toString().trim();
+      const nomeEquip = (l['EQUIPAMENTO']||'').toString().trim();
+      if(!unidade || !nomeEquip) continue;
+      const cliente_id = clienteIdPorNome.get(unidade);
+      if(!cliente_id) continue;
+      const serialRaw = (l['SERIAL']||'').toString().trim();
+      listaEquip.push({
+        nome: nomeEquip,
+        categoria: (l['CATEGORIA']||'').toString().trim() || null,
+        cliente_id,
+        numero_serie: serialRaw || null
+      });
+    }
+
+    status.textContent = `Gravando ${listaEquip.length} equipamentos…`;
+    const comSerial = listaEquip.filter(e=>e.numero_serie);
+    const semSerial = listaEquip.filter(e=>!e.numero_serie);
+
+    let gravados = 0;
+    for(let i=0; i<comSerial.length; i+=300){
+      const lote = comSerial.slice(i, i+300);
+      const { error } = await sb.from('equipamentos').upsert(lote, { onConflict: 'numero_serie' });
+      if(error){ status.textContent = 'Erro ao gravar equipamentos: '+error.message; return; }
+      gravados += lote.length;
+      status.textContent = `Gravando equipamentos… ${gravados}/${listaEquip.length}`;
+    }
+    for(let i=0; i<semSerial.length; i+=300){
+      const lote = semSerial.slice(i, i+300);
+      const { error } = await sb.from('equipamentos').insert(lote);
+      if(error){ status.textContent = 'Erro ao gravar equipamentos sem série: '+error.message; return; }
+      gravados += lote.length;
+      status.textContent = `Gravando equipamentos… ${gravados}/${listaEquip.length}`;
+    }
+
+    status.textContent = `✓ Importação concluída: ${listaClientes.length} clientes/unidades e ${listaEquip.length} equipamentos processados.`;
+    toast('Planilha importada com sucesso.');
+    await renderCatalogo();
+    await carregarFiltrosBusca();
+  }catch(err){
+    console.error('[import]', err);
+    status.textContent = 'Erro ao importar: '+err.message;
+  }
+}
+
 // ---------------- NOVO ATENDIMENTO ----------------
 function montarMensagemInicial(){
   const nome = $('#f-nome').value.trim() || '(cliente)';
+  const grupo = $('#f-cliente-grupo').value.trim();
   const equipamento = $('#f-equipamento').value.trim();
   const descricao = $('#f-descricao').value.trim();
-  return `Olá, ${nome}! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: (gerado ao salvar)\n${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao? 'Problema relatado: '+descricao+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
+  return `Olá, ${nome}! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: (gerado ao salvar)\n${grupo? 'Cliente: '+grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao? 'Problema relatado: '+descricao+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
 }
 
-['f-nome','f-equipamento','f-descricao'].forEach(id=>{
+['f-nome','f-cliente-grupo','f-equipamento','f-descricao'].forEach(id=>{
   $('#'+id).addEventListener('input', ()=>{ $('#preview-text').textContent = montarMensagemInicial(); });
+});
+
+function limparFormularioNovoAtendimento(){
+  $('#f-nome').value=''; $('#f-cliente-grupo').value=''; $('#f-telefone').value='';
+  $('#f-equipamento').value=''; $('#f-descricao').value='';
+  $('#preview-text').textContent = 'Preencha o formulário ao lado para ver a prévia…';
+  $('#catalogo-selecionado-hint').style.display = 'none';
+  catalogoSelecionado = { cliente_id: null, equipamento_id: null };
+}
+
+$('#btn-cancelar-novo').addEventListener('click', ()=>{
+  limparFormularioNovoAtendimento();
+  switchView('dashboard');
 });
 
 $('#btn-criar-atendimento').addEventListener('click', async ()=>{
   const linha_id = $('#f-linha').value;
   const cliente_nome = $('#f-nome').value.trim();
+  const cliente_grupo = $('#f-cliente-grupo').value.trim();
   const cliente_telefone = comDDI55($('#f-telefone').value);
   const equipamento = $('#f-equipamento').value.trim();
   const descricao_problema = $('#f-descricao').value.trim();
@@ -860,7 +1260,8 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
   btn.disabled = true; btn.textContent = 'Gerando…';
 
   const { data, error } = await sb.from('atendimentos').insert({
-    linha_id, cliente_nome, cliente_telefone, equipamento, descricao_problema,
+    linha_id, cliente_nome, cliente_grupo: cliente_grupo||null, cliente_telefone, equipamento, descricao_problema,
+    cliente_id: catalogoSelecionado.cliente_id, equipamento_id: catalogoSelecionado.equipamento_id,
     status: 'aberto', agente_id: currentAgente.id
   }).select().single();
 
@@ -868,7 +1269,7 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
 
   if(error){ toast('Erro ao criar atendimento: '+error.message); return; }
 
-  const mensagem = `Olá, ${cliente_nome}! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
+  const mensagem = `Olá, ${cliente_nome}! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${cliente_grupo? 'Cliente: '+cliente_grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
 
   await sb.from('interacoes').insert({
     atendimento_id: data.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: mensagem
@@ -877,10 +1278,7 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
   toast('Protocolo '+data.protocolo+' criado!');
   window.open(waLink(cliente_telefone, mensagem), '_blank');
 
-  // limpa formulário
-  $('#f-nome').value=''; $('#f-telefone').value=''; $('#f-equipamento').value=''; $('#f-descricao').value='';
-  $('#preview-text').textContent = 'Preencha o formulário ao lado para ver a prévia…';
-
+  limparFormularioNovoAtendimento();
   switchView('atendimentos');
 });
 
@@ -1233,7 +1631,8 @@ async function exportarProtocoloPDF(atendimento, interacoes){
   doc.setFontSize(10);
   doc.setTextColor(20);
   const infoLinhas = [
-    ['Cliente', atendimento.cliente_nome],
+    ['Unidade', atendimento.cliente_nome],
+    ...(atendimento.cliente_grupo ? [['Cliente', atendimento.cliente_grupo]] : []),
     ['WhatsApp', '+'+atendimento.cliente_telefone],
     ['Equipamento', atendimento.equipamento || '—'],
     ['Linha', atendimento.linhas?.nome || '—'],
@@ -1293,7 +1692,11 @@ async function abrirDetalhe(id){
   $('#modal-body').innerHTML = `
     <div class="ticket" style="margin-top:14px;">
       <div class="row">
-        <div><div class="label">Cliente</div><div style="font-weight:700;font-size:15px;">${atendimento.cliente_nome}</div></div>
+        <div>
+          <div class="label">Unidade</div>
+          <div style="font-weight:700;font-size:15px;">${atendimento.cliente_nome}</div>
+          ${atendimento.cliente_grupo ? `<div style="font-size:12px;color:rgba(255,255,255,.75);margin-top:1px;">${atendimento.cliente_grupo}</div>` : ''}
+        </div>
         <div>${badgeStatus(atendimento.status)}</div>
       </div>
       <div class="meta">
@@ -1416,7 +1819,7 @@ function abrirTransferencia(atendimento, interacoes){
 }
 
 function montarResumoHistorico(atendimento, interacoes){
-  let txt = `📋 TRANSFERÊNCIA DE ATENDIMENTO\nProtocolo: ${atendimento.protocolo}\nCliente: ${atendimento.cliente_nome}\nWhatsApp do cliente: +${atendimento.cliente_telefone}\nEquipamento: ${atendimento.equipamento||'—'}\nProblema inicial: ${atendimento.descricao_problema||'—'}\n\n— Histórico de procedimentos —\n`;
+  let txt = `📋 TRANSFERÊNCIA DE ATENDIMENTO\nProtocolo: ${atendimento.protocolo}\nUnidade: ${atendimento.cliente_nome}\n${atendimento.cliente_grupo ? 'Cliente: '+atendimento.cliente_grupo+'\n' : ''}WhatsApp do cliente: +${atendimento.cliente_telefone}\nEquipamento: ${atendimento.equipamento||'—'}\nProblema inicial: ${atendimento.descricao_problema||'—'}\n\n— Histórico de procedimentos —\n`;
   interacoes.forEach(i=>{
     txt += `\n[${fmtData(i.criado_em)}] (${i.tipo}) ${i.conteudo}`;
   });
