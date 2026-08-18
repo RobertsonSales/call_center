@@ -1613,6 +1613,25 @@ $('#f-nome').addEventListener('input', ()=>{
   }, 200);
 });
 
+// ao sair do campo (perder o foco) sem ter clicado numa sugestão, mas
+// com um texto que já bate exatamente com uma unidade cadastrada,
+// confirma essa unidade automaticamente — sem isso, digitar o nome
+// certo "na mão" nunca contava como seleção, e a lista de equipamentos
+// daquela unidade nunca era carregada. O atraso de 200ms garante que,
+// se o usuário estiver clicando numa sugestão da lista, esse clique
+// seja processado primeiro (blur dispara antes do click terminar).
+$('#f-nome').addEventListener('blur', ()=>{
+  setTimeout(async ()=>{
+    if(catalogoSelecionado.cliente_id) return;
+    const texto = $('#f-nome').value.trim();
+    if(!texto) return;
+    await garantirClientesCacheNovo();
+    const alvo = normalizarTexto(texto);
+    const match = clientesCache.find(c => normalizarTexto(c.nome) === alvo);
+    if(match) selecionarClienteNoNovoForm(match);
+  }, 200);
+});
+
 let timerBuscaEquipNovo = null;
 $('#f-equipamento').addEventListener('input', ()=>{
   clearTimeout(timerBuscaEquipNovo);
@@ -1654,6 +1673,20 @@ $('#f-equipamento').addEventListener('focus', ()=>{
   if(!$('#f-equipamento').value.trim() && catalogoSelecionado.cliente_id){
     mostrarEquipamentosDoCliente(catalogoSelecionado.cliente_id, $('#f-nome').value.trim());
   }
+});
+
+// ao sair do campo (perder o foco) sem clicar numa sugestão, mas com
+// texto que já bate exatamente com um equipamento da unidade
+// selecionada, confirma esse equipamento automaticamente.
+$('#f-equipamento').addEventListener('blur', ()=>{
+  setTimeout(()=>{
+    if(catalogoSelecionado.equipamento_id) return;
+    const texto = $('#f-equipamento').value.trim();
+    if(!texto || !catalogoSelecionado.cliente_id) return;
+    const alvo = normalizarTexto(texto);
+    const match = equipamentosDoClienteCache.find(e => normalizarTexto(e.nome) === alvo);
+    if(match) selecionarDoCatalogo(match);
+  }, 200);
 });
 
 function limparFormularioNovoAtendimento(){
