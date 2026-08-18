@@ -1770,46 +1770,55 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
   const btn = $('#btn-criar-atendimento');
   btn.disabled = true; btn.textContent = 'Gerando…';
 
-  const { data, error } = await sb.from('atendimentos').insert({
-    linha_id, cliente_nome, cliente_grupo: cliente_grupo||null, cliente_telefone, equipamento, descricao_problema,
-    cliente_id: catalogoSelecionado.cliente_id, equipamento_id: catalogoSelecionado.equipamento_id,
-    status: 'aberto', agente_id: currentAgente.id
-  }).select().single();
+  try{
+    const { data, error } = await sb.from('atendimentos').insert({
+      linha_id, cliente_nome, cliente_grupo: cliente_grupo||null, cliente_telefone, equipamento, descricao_problema,
+      cliente_id: catalogoSelecionado.cliente_id, equipamento_id: catalogoSelecionado.equipamento_id,
+      status: 'aberto', agente_id: currentAgente.id
+    }).select().single();
 
-  btn.disabled = false; btn.textContent = 'Gerar protocolo';
+    if(error){ toast('Erro ao criar atendimento: '+error.message); return; }
 
-  if(error){ toast('Erro ao criar atendimento: '+error.message); return; }
+    const mensagem = `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${cliente_nome? 'Unidade: '+cliente_nome+'\n':''}${cliente_grupo? 'Cliente: '+cliente_grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}${procedimento_sugerido? 'Procedimento sugerido: '+procedimento_sugerido+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
 
-  const mensagem = `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${cliente_nome? 'Unidade: '+cliente_nome+'\n':''}${cliente_grupo? 'Cliente: '+cliente_grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}${procedimento_sugerido? 'Procedimento sugerido: '+procedimento_sugerido+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
-
-  await sb.from('interacoes').insert({
-    atendimento_id: data.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: mensagem
-  });
-  if(procedimento_sugerido){
     await sb.from('interacoes').insert({
-      atendimento_id: data.id, agente_id: currentAgente.id, tipo:'procedimento', conteudo: procedimento_sugerido
+      atendimento_id: data.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: mensagem
     });
+    if(procedimento_sugerido){
+      await sb.from('interacoes').insert({
+        atendimento_id: data.id, agente_id: currentAgente.id, tipo:'procedimento', conteudo: procedimento_sugerido
+      });
+    }
+    if(observacoes_cliente){
+      await sb.from('interacoes').insert({
+        atendimento_id: data.id, agente_id: currentAgente.id, tipo:'nota_interna', conteudo: 'Observação do cliente: '+observacoes_cliente
+      });
+    }
+
+    toast('Protocolo '+data.protocolo+' criado!');
+
+    // tentativa automática (pode ser bloqueada por bloqueador de pop-up,
+    // já que ocorre depois de chamadas assíncronas) — por isso o link
+    // clicável abaixo é o caminho garantido, não só um extra.
+    window.open(waLink(cliente_telefone, mensagem), '_blank');
+
+    $('#novo-form-preview').style.display = 'none';
+    $('#novo-confirmacao').style.display = 'block';
+    $('#novo-confirmacao-protocolo').textContent = data.protocolo;
+    $('#novo-confirmacao-mensagem').textContent = mensagem;
+    const link = $('#novo-confirmacao-link');
+    link.href = waLink(cliente_telefone, mensagem);
+    ultimoAtendimentoCriadoId = data.id;
+
+  }catch(err){
+    console.error('[criar-atendimento] erro inesperado:', err);
+    toast('Erro inesperado ao criar atendimento: '+(err?.message || err));
+  }finally{
+    // garante que o botão NUNCA fique travado em "Gerando…", mesmo se
+    // algo lançar uma exceção em vez de só devolver um erro tratável.
+    btn.disabled = false;
+    btn.textContent = 'Gerar protocolo';
   }
-  if(observacoes_cliente){
-    await sb.from('interacoes').insert({
-      atendimento_id: data.id, agente_id: currentAgente.id, tipo:'nota_interna', conteudo: 'Observação do cliente: '+observacoes_cliente
-    });
-  }
-
-  toast('Protocolo '+data.protocolo+' criado!');
-
-  // tentativa automática (pode ser bloqueada por bloqueador de pop-up,
-  // já que ocorre depois de chamadas assíncronas) — por isso o link
-  // clicável abaixo é o caminho garantido, não só um extra.
-  window.open(waLink(cliente_telefone, mensagem), '_blank');
-
-  $('#novo-form-preview').style.display = 'none';
-  $('#novo-confirmacao').style.display = 'block';
-  $('#novo-confirmacao-protocolo').textContent = data.protocolo;
-  $('#novo-confirmacao-mensagem').textContent = mensagem;
-  const link = $('#novo-confirmacao-link');
-  link.href = waLink(cliente_telefone, mensagem);
-  ultimoAtendimentoCriadoId = data.id;
 });
 
 $('#btn-concluir-novo').addEventListener('click', ()=>{
