@@ -434,7 +434,7 @@
           </div>
           <button class="btn btn-primary btn-sm" id="btn-filtrar-historico">Filtrar</button>
           <button class="btn btn-ghost btn-sm" id="btn-limpar-historico">Limpar</button>
-          <button class="btn btn-ghost btn-sm" id="btn-pdf-historico">⬇ PDF</button>
+          <button class="btn btn-ghost btn-sm" id="btn-pdf-historico">👁 PDF</button>
           <button class="btn btn-ghost btn-sm" id="btn-excel-historico">⬇ Excel</button>
         </div>
         <div id="historico-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
@@ -535,7 +535,7 @@
           </div>
           <button class="btn btn-primary btn-sm" id="btn-filtrar-supervisao">Filtrar</button>
           <button class="btn btn-ghost btn-sm" id="btn-limpar-supervisao">Limpar</button>
-          <button class="btn btn-ghost btn-sm" id="btn-pdf-supervisao">⬇ PDF</button>
+          <button class="btn btn-ghost btn-sm" id="btn-pdf-supervisao">👁 PDF</button>
           <button class="btn btn-ghost btn-sm" id="btn-excel-supervisao">⬇ Excel</button>
         </div>
         <div id="supervisao-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
@@ -1881,8 +1881,9 @@ function calcDuracao(inicio, fim){
 
 function tabelaAtendimentos(lista, opts={}){
   const mostrarAgente = !!opts.mostrarAgente;
+  const mostrarReenviar = !!opts.mostrarReenviar;
   return `<div class="table-scroll"><table><thead><tr>
-      <th>Protocolo</th><th>Cliente</th><th>Linha</th>${mostrarAgente?'<th>Agente</th>':''}<th>Status</th><th>Início</th><th>Duração</th>
+      <th>Protocolo</th><th>Cliente</th><th>Linha</th>${mostrarAgente?'<th>Agente</th>':''}<th>Status</th><th>Início</th><th>Duração</th>${mostrarReenviar?'<th></th>':''}
     </tr></thead><tbody>
     ${lista.map(a=>`
       <tr data-id="${a.id}">
@@ -1893,6 +1894,7 @@ function tabelaAtendimentos(lista, opts={}){
         <td>${badgeStatus(a.status)}</td>
         <td>${fmtData(a.criado_em)}</td>
         <td>${calcDuracao(a.criado_em, a.encerrado_em)}</td>
+        ${mostrarReenviar?`<td style="text-align:right;white-space:nowrap;"><button class="btn btn-ghost btn-sm" data-reenviar="${a.id}" title="Reenviar histórico deste protocolo via WhatsApp">↻ Reenviar</button></td>`:''}
       </tr>`).join('')}
     </tbody></table></div>`;
 }
@@ -1900,6 +1902,12 @@ function tabelaAtendimentos(lista, opts={}){
 function bindRowClicks(wrap){
   wrap.querySelectorAll('tbody tr').forEach(tr=>{
     tr.addEventListener('click', ()=> abrirDetalhe(tr.dataset.id));
+  });
+  wrap.querySelectorAll('[data-reenviar]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      reenviarProtocolo(btn.dataset.reenviar);
+    });
   });
 }
 
@@ -1951,11 +1959,11 @@ async function renderSupervisao(){
   if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar. Confirme que este usuário está marcado como Supervisor (is_admin) no banco.</p>'; return; }
   if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>Nenhum resultado para os filtros aplicados.</div>`; supervisaoDataAtual = []; return; }
   supervisaoDataAtual = data;
-  wrap.innerHTML = tabelaAtendimentos(data, {mostrarAgente:true});
+  wrap.innerHTML = tabelaAtendimentos(data, {mostrarAgente:true, mostrarReenviar:true});
   bindRowClicks(wrap);
 }
 
-$('#btn-pdf-supervisao')?.addEventListener('click', ()=> exportarPDF(supervisaoDataAtual, 'Supervisão — todos os atendimentos', true));
+$('#btn-pdf-supervisao')?.addEventListener('click', ()=> exportarPDF(supervisaoDataAtual, 'Supervisão — todos os atendimentos', true, 'view'));
 $('#btn-excel-supervisao')?.addEventListener('click', ()=> exportarExcel(supervisaoDataAtual, 'supervisao_atendimentos', true));
 
 // ---------------- AGENTES (somente admin) ----------------
@@ -2091,7 +2099,7 @@ async function renderHistorico(){
   const wrap = $('#historico-table-wrap');
   wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Carregando…</div>';
 
-  let q = sb.from('atendimentos').select('*, linhas(nome)').order('criado_em', {ascending:false}).limit(300);
+  let q = sb.from('atendimentos').select('*, linhas(nome), agentes(nome)').order('criado_em', {ascending:false}).limit(300);
 
   const de = $('#fh-de').value, ate = $('#fh-ate').value;
   const protocolo = $('#fh-protocolo').value.trim();
@@ -2108,12 +2116,12 @@ async function renderHistorico(){
   if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar histórico.</p>'; return; }
   if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>Nenhum resultado para os filtros aplicados.</div>`; historicoDataAtual = []; return; }
   historicoDataAtual = data;
-  wrap.innerHTML = tabelaAtendimentos(data);
+  wrap.innerHTML = tabelaAtendimentos(data, {mostrarAgente:true, mostrarReenviar:true});
   bindRowClicks(wrap);
 }
 
-$('#btn-pdf-historico').addEventListener('click', ()=> exportarPDF(historicoDataAtual, 'Meu histórico de atendimentos', false));
-$('#btn-excel-historico').addEventListener('click', ()=> exportarExcel(historicoDataAtual, 'meu_historico_atendimentos', false));
+$('#btn-pdf-historico').addEventListener('click', ()=> exportarPDF(historicoDataAtual, 'Meu histórico de atendimentos', true, 'view'));
+$('#btn-excel-historico').addEventListener('click', ()=> exportarExcel(historicoDataAtual, 'meu_historico_atendimentos', true));
 
 // ---------------- EXPORTAÇÃO PDF / EXCEL ----------------
 const STATUS_LABEL = {aberto:'Aberto', em_andamento:'Em andamento', transferido:'Transferido', encerrado:'Encerrado'};
@@ -2418,21 +2426,25 @@ async function encerrarAtendimento(atendimento){
 }
 
 // ---------------- TRANSFERÊNCIA / REENVIO ----------------
-function abrirTransferencia(atendimento, interacoes){
+async function abrirTransferencia(atendimento, interacoes){
+  const numeroDigitado = prompt('WhatsApp do especialista que vai continuar o atendimento (DDD + número, ex: 21998887777):','');
+  if(!numeroDigitado) return;
+  const numero = comDDI55(numeroDigitado);
   const resumo = montarResumoHistorico(atendimento, interacoes);
-  const numero = prompt('WhatsApp do especialista que vai continuar o atendimento (com DDI e DDD):','');
-  if(!numero) return;
 
-  sb.from('atendimentos').update({status:'transferido'}).eq('id', atendimento.id).then(()=>{
-    sb.from('interacoes').insert({
+  try{
+    await sb.from('atendimentos').update({status:'transferido'}).eq('id', atendimento.id);
+    await sb.from('interacoes').insert({
       atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'transferencia',
-      conteudo: 'Atendimento transferido para '+soDigitos(numero)
-    }).then(()=>{
-      window.open(waLink(numero, resumo), '_blank');
-      toast('Histórico enviado para transferência.');
-      abrirDetalhe(atendimento.id);
+      conteudo: 'Atendimento transferido para +'+numero
     });
-  });
+  }catch(err){
+    console.error('[transferencia]', err);
+    toast('Erro ao registrar a transferência: '+(err?.message||err));
+    return;
+  }
+
+  mostrarConfirmacaoEnvioModal(atendimento.id, 'Transferência registrada', resumo, numero);
 }
 
 function montarResumoHistorico(atendimento, interacoes){
@@ -2444,16 +2456,42 @@ function montarResumoHistorico(atendimento, interacoes){
   return txt;
 }
 
-// reenvio a partir do histórico (mesma lógica de transferência, sem mudar status)
+// Mostra, dentro do próprio modal de detalhe, um link garantido e
+// clicável para enviar a mensagem via WhatsApp. Não confiamos só num
+// window.open() automático depois de chamadas assíncronas — nesse
+// ponto do fluxo, o navegador frequentemente bloqueia como pop-up.
+function mostrarConfirmacaoEnvioModal(atendimentoId, titulo, mensagem, numero){
+  window.open(waLink(numero, mensagem), '_blank'); // tentativa automática (best-effort)
+  $('#modal-overlay').classList.add('active'); // garante que o modal esteja visível, mesmo vindo de um atalho fora do detalhe
+  $('#modal-protocolo-label').textContent = titulo;
+  $('#modal-protocolo').textContent = '+'+numero;
+  $('#modal-body').innerHTML = `
+    <div class="ticket" style="margin-top:14px;">
+      <div class="row"><div><div class="label">${escapeHtml(titulo)}</div><div class="proto-num" style="font-size:16px;">+${numero}</div></div></div>
+    </div>
+    <p class="section-title">Mensagem</p>
+    <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;max-height:320px;overflow-y:auto;">${escapeHtml(mensagem)}</div>
+    <a class="btn btn-whatsapp btn-block" href="${waLink(numero, mensagem)}" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
+    <button class="btn btn-ghost btn-block" id="btn-voltar-detalhe-modal">Voltar ao protocolo</button>
+  `;
+  $('#btn-voltar-detalhe-modal').addEventListener('click', ()=> abrirDetalhe(atendimentoId));
+  toast('Pronto — clique no botão para abrir o WhatsApp.');
+}
+
+// reenvio a partir do histórico (mesma lógica de transferência, sem
+// mudar status). OBS: hoje esta função não está ligada a nenhum botão
+// da interface — se quiser um atalho de "reenviar" direto da lista do
+// Histórico, me avise que eu ligo isso a um botão.
 async function reenviarProtocolo(id){
   const [{data:atendimento}, {data:interacoes}] = await Promise.all([
     sb.from('atendimentos').select('*').eq('id', id).single(),
     sb.from('interacoes').select('*').eq('atendimento_id', id).order('criado_em',{ascending:true})
   ]);
+  const numeroDigitado = prompt('Reenviar o histórico deste protocolo para qual WhatsApp? (DDD + número)','');
+  if(!numeroDigitado) return;
+  const numero = comDDI55(numeroDigitado);
   const resumo = montarResumoHistorico(atendimento, interacoes||[]);
-  const numero = prompt('Reenviar o histórico deste protocolo para qual WhatsApp?','');
-  if(!numero) return;
-  window.open(waLink(numero, resumo), '_blank');
+  mostrarConfirmacaoEnvioModal(id, 'Histórico pronto para reenvio', resumo, numero);
 }
 
 // ---------------- MODAL controls ----------------
