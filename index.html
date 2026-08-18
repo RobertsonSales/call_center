@@ -1560,14 +1560,24 @@ function renderResultadosBuscaNovo(tipo, itens, tituloExtra){
   painel.style.display = 'block';
 }
 
+// remove acentos para comparação — "bioquimico" digitado sem acento
+// precisa encontrar "Bioquímico" salvo com acento na base.
+function normalizarTexto(s){
+  return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+}
+
 // mostra, sem precisar digitar nada, os equipamentos já vinculados à
 // unidade selecionada — chamada ao selecionar um cliente e também ao
-// focar no campo Equipamento enquanto ele estiver vazio.
+// focar no campo Equipamento enquanto ele estiver vazio. Também
+// alimenta o cache usado para filtrar localmente enquanto o usuário
+// digita (mais rápido e sem o problema de acentos do ILIKE do banco).
+let equipamentosDoClienteCache = [];
 async function mostrarEquipamentosDoCliente(clienteId, nomeCliente){
   const { data } = await sb.from('equipamentos')
     .select('*, clientes(id, nome, cliente_grupo, telefone)')
-    .eq('cliente_id', clienteId).eq('ativo', true).order('nome').limit(30);
-  renderResultadosBuscaNovo('equipamento', data || [], `Equipamentos de ${nomeCliente || 'unidade selecionada'}`);
+    .eq('cliente_id', clienteId).eq('ativo', true).order('nome').limit(200);
+  equipamentosDoClienteCache = data || [];
+  renderResultadosBuscaNovo('equipamento', equipamentosDoClienteCache, `Equipamentos de ${nomeCliente || 'unidade selecionada'}`);
 }
 
 function selecionarClienteNoNovoForm(cliente){
@@ -1583,32 +1593,59 @@ function selecionarClienteNoNovoForm(cliente){
 }
 
 let timerBuscaClienteNovo = null;
+async function garantirClientesCacheNovo(){
+  if(!clientesCache.length){
+    const { data } = await sb.from('clientes').select('*').eq('ativo', true).order('nome');
+    clientesCache = data || [];
+  }
+}
 $('#f-nome').addEventListener('input', ()=>{
   clearTimeout(timerBuscaClienteNovo);
   const q = $('#f-nome').value.trim();
   if(!q){ catalogoSelecionado.cliente_id = null; esconderResultadosNovo(); return; }
-  if(q.length < 2){ esconderResultadosNovo(); return; }
   timerBuscaClienteNovo = setTimeout(async ()=>{
-    const { data } = await sb.from('clientes').select('*').eq('ativo', true)
-      .or(`nome.ilike.%${q}%,cliente_grupo.ilike.%${q}%`).limit(8);
-    renderResultadosBuscaNovo('cliente', data || []);
-  }, 280);
+    await garantirClientesCacheNovo();
+    const alvo = normalizarTexto(q);
+    const filtrados = clientesCache.filter(c =>
+      normalizarTexto(c.nome).includes(alvo) || normalizarTexto(c.cliente_grupo).includes(alvo)
+    ).slice(0,8);
+    renderResultadosBuscaNovo('cliente', filtrados);
+  }, 200);
 });
 
 let timerBuscaEquipNovo = null;
 $('#f-equipamento').addEventListener('input', ()=>{
   clearTimeout(timerBuscaEquipNovo);
+  // qualquer edição manual do texto invalida uma seleção anterior feita
+  // por clique — só voltamos a vincular um equipamento_id quando o
+  // usuário clicar de novo num resultado da lista.
+  catalogoSelecionado.equipamento_id = null;
+
   const q = $('#f-equipamento').value.trim();
-  if(q.length < 2){
-    if(catalogoSelecionado.cliente_id) mostrarEquipamentosDoCliente(catalogoSelecionado.cliente_id, $('#f-nome').value.trim());
-    else esconderResultadosNovo();
+
+  // com unidade já selecionada: filtra localmente (sem sensibilidade a
+  // acentos) a lista já carregada daquele cliente — instantâneo e não
+  // depende do ILIKE do Postgres (que não ignora acentos).
+  if(catalogoSelecionado.cliente_id){
+    if(!q){ renderResultadosBuscaNovo('equipamento', equipamentosDoClienteCache, `Equipamentos de ${$('#f-nome').value.trim()}`); return; }
+    const alvo = normalizarTexto(q);
+    const filtrados = equipamentosDoClienteCache.filter(e =>
+      normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo) || normalizarTexto(e.numero_serie).includes(alvo)
+    );
+    renderResultadosBuscaNovo('equipamento', filtrados, `Equipamentos de ${$('#f-nome').value.trim()}`);
     return;
   }
+
+  // sem unidade selecionada: busca em toda a base de equipamentos
+  if(q.length < 2){ esconderResultadosNovo(); return; }
   timerBuscaEquipNovo = setTimeout(async ()=>{
-    let query = sb.from('equipamentos').select('*, clientes(id, nome, cliente_grupo, telefone)').eq('ativo', true).ilike('nome', `%${q}%`);
-    if(catalogoSelecionado.cliente_id) query = query.eq('cliente_id', catalogoSelecionado.cliente_id);
-    const { data } = await query.limit(8);
-    renderResultadosBuscaNovo('equipamento', data || []);
+    const { data } = await sb.from('equipamentos').select('*, clientes(id, nome, cliente_grupo, telefone)').eq('ativo', true)
+      .ilike('nome', `%${q}%`).limit(20);
+    // reforça, no lado do cliente, a busca sem acento sobre o que o
+    // banco já trouxe (o ILIKE sozinho não ignora acentuação)
+    const alvo = normalizarTexto(q);
+    const filtrados = (data||[]).filter(e => normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo));
+    renderResultadosBuscaNovo('equipamento', filtrados.length ? filtrados : (data||[]));
   }, 280);
 });
 // ao focar no campo Equipamento (ainda vazio) com uma unidade já
@@ -2153,12 +2190,20 @@ async function abrirDetalhe(id){
       <button class="btn btn-whatsapp btn-sm" id="btn-salvar-enviar">Salvar e enviar via WhatsApp</button>
     </div>
 
+    <p class="section-title" style="margin-bottom:10px;">Registrar observação do cliente</p>
+    <p class="hint" style="margin:-4px 0 8px;">Para anotar o que o cliente foi relatando ao longo da conversa no WhatsApp real — fica gravado no histórico deste protocolo.</p>
+    <div class="field"><textarea id="nova-observacao" rows="3" placeholder="Ex: cliente informou que o equipamento voltou a apresentar o mesmo erro após 10 minutos ligado."></textarea></div>
+    <div style="display:flex;gap:8px;margin-bottom:22px;">
+      <button class="btn btn-ghost btn-sm" id="btn-salvar-observacao">Salvar observação</button>
+    </div>
+
     <p class="section-title" style="margin-bottom:10px;">Histórico do protocolo</p>
     <div id="lista-interacoes">${listaInteracoes}</div>
   `;
 
   $('#btn-salvar-interacao').addEventListener('click', ()=> salvarInteracao(atendimento, false));
   $('#btn-salvar-enviar').addEventListener('click', ()=> salvarInteracao(atendimento, true));
+  $('#btn-salvar-observacao').addEventListener('click', ()=> salvarObservacaoCliente(atendimento));
   const btnEnc = $('#btn-encerrar');
   if(btnEnc) btnEnc.addEventListener('click', ()=> encerrarAtendimento(atendimento));
   $('#btn-transferir').addEventListener('click', ()=> abrirTransferencia(atendimento, interacoes||[]));
@@ -2205,6 +2250,19 @@ async function salvarInteracao(atendimento, enviarWhatsapp){
     window.open(waLink(atendimento.cliente_telefone, texto), '_blank');
   }
   toast('Procedimento registrado.');
+  abrirDetalhe(atendimento.id);
+}
+
+async function salvarObservacaoCliente(atendimento){
+  const texto = $('#nova-observacao').value.trim();
+  if(!texto){ toast('Escreva a observação antes de salvar.'); return; }
+
+  await sb.from('interacoes').insert({
+    atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'nota_interna',
+    conteudo: 'Observação do cliente: '+texto
+  });
+
+  toast('Observação registrada.');
   abrirDetalhe(atendimento.id);
 }
 
