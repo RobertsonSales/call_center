@@ -1047,7 +1047,7 @@ async function renderEquipamentos(){
   renderizarTabelaEquipamentos(equipamentosCache);
 }
 
-function renderizarTabelaEquipamentos(lista){
+function renderizarTabelaEquipamentos(lista, cap=300){
   const wrap = $('#equipamentos-list-wrap');
   if(!lista.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🩺</div>Nenhum equipamento encontrado.</div>`; return; }
 
@@ -1065,7 +1065,7 @@ function renderizarTabelaEquipamentos(lista){
           <button class="btn btn-ghost btn-sm" data-toggle-equip="${e.id}">${e.ativo?'Inativar':'Ativar'}</button>
         </td>` : ''}
       </tr>`).join('')}
-    </tbody></table></div>${equipamentosCache.length>=300?'<p class="hint">Mostrando os 300 primeiros — use a busca inteligente no painel para localizar itens específicos.</p>':''}`;
+    </tbody></table></div>${lista.length>=cap?`<p class="hint">Mostrando os ${cap} primeiros resultados — refine o texto digitado para localizar itens mais específicos.</p>`:''}`;
 
   if(currentAgente.is_admin){
     wrap.querySelectorAll('[data-row-equip]').forEach(tr=>{
@@ -1109,12 +1109,26 @@ function cancelarEdicaoEquipamento(){
 $('#fc-nome')?.addEventListener('input', ()=>{
   renderizarTabelaClientes(filtrarPorTexto(clientesCache, $('#fc-nome').value, ['nome','cliente_grupo']));
 });
+
+// Equipamentos: a lista pré-carregada só traz os 300 primeiros (em
+// ordem alfabética) por performance — filtrar só esse recorte deixaria
+// de fora qualquer coisa fora dessa fatia. Por isso a busca aqui
+// consulta o banco diretamente (com debounce), como no modal do painel.
+let timerFiltroEquip = null;
 $('#fe-nome')?.addEventListener('input', ()=>{
-  const t = $('#fe-nome').value.trim().toLowerCase();
-  const filtrados = !t ? equipamentosCache : equipamentosCache.filter(e =>
-    (e.nome||'').toLowerCase().includes(t) || (e.categoria||'').toLowerCase().includes(t) || (e.clientes?.nome||'').toLowerCase().includes(t)
-  );
-  renderizarTabelaEquipamentos(filtrados);
+  clearTimeout(timerFiltroEquip);
+  const termo = $('#fe-nome').value.trim();
+  if(!termo){ renderizarTabelaEquipamentos(equipamentosCache); return; }
+  $('#equipamentos-list-wrap').innerHTML = '<div class="loading-row"><div class="spinner"></div>Buscando…</div>';
+  timerFiltroEquip = setTimeout(async ()=>{
+    const { data, error } = await sb.from('equipamentos')
+      .select('*, clientes(id, nome)')
+      .or(`nome.ilike.%${termo}%,categoria.ilike.%${termo}%,numero_serie.ilike.%${termo}%`)
+      .order('nome')
+      .limit(100);
+    if(error){ $('#equipamentos-list-wrap').innerHTML = '<p class="hint">Erro na busca: '+error.message+'</p>'; return; }
+    renderizarTabelaEquipamentos(data || [], 100);
+  }, 300);
 });
 
 // ---------------- AUTOCOMPLETE (caixas de busca inteligente) ----------------
