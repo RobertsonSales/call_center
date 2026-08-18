@@ -371,6 +371,8 @@
           </div>
           <div class="field"><label>Equipamento</label><input id="f-equipamento" placeholder="Digite para buscar na base ou informe um novo…" autocomplete="off"/></div>
           <div class="field"><label>Descrição inicial do problema</label><textarea id="f-descricao" rows="3" placeholder="Ex: equipamento não liga após queda de energia"></textarea></div>
+          <div class="field"><label>Procedimento sugerido (opcional)</label><textarea id="f-procedimento" rows="2" placeholder="Ex: verificar se o cabo de força está bem conectado e reiniciar o equipamento"></textarea></div>
+          <div class="field"><label>Outras observações do cliente (opcional)</label><textarea id="f-observacoes" rows="2" placeholder="Ex: cliente relatou que o problema começou após uma queda de energia"></textarea></div>
           <div class="hint" id="catalogo-selecionado-hint" style="display:none;margin-bottom:10px;"></div>
           <div style="display:flex;gap:8px;">
             <button class="btn btn-primary" style="flex:1;" id="btn-criar-atendimento">Gerar protocolo</button>
@@ -378,13 +380,26 @@
           </div>
         </div>
         <div class="card card-pad" id="novo-preview">
-          <div id="novo-busca-painel" style="display:none;margin-bottom:16px;">
-            <p class="section-title" id="novo-busca-titulo" style="margin-bottom:8px;">Resultados na base</p>
-            <div id="novo-busca-resultados"></div>
+          <div id="novo-form-preview">
+            <div id="novo-busca-painel" style="display:none;margin-bottom:16px;">
+              <p class="section-title" id="novo-busca-titulo" style="margin-bottom:8px;">Resultados na base</p>
+              <div id="novo-busca-resultados"></div>
+            </div>
+            <p class="section-title">Prévia da mensagem inicial</p>
+            <p class="section-sub">Enviada ao cliente assim que o protocolo é criado.</p>
+            <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;min-height:150px;" id="preview-text">Preencha o formulário ao lado para ver a prévia…</div>
           </div>
-          <p class="section-title">Prévia da mensagem inicial</p>
-          <p class="section-sub">Enviada ao cliente assim que o protocolo é criado.</p>
-          <div style="background:var(--bg);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;min-height:150px;" id="preview-text">Preencha o formulário ao lado para ver a prévia…</div>
+          <div id="novo-confirmacao" style="display:none;">
+            <div class="ticket" style="margin-bottom:16px;">
+              <div class="row">
+                <div><div class="label">Protocolo gerado</div><div class="proto-num" id="novo-confirmacao-protocolo" style="font-size:20px;"></div></div>
+              </div>
+            </div>
+            <p class="section-title">Mensagem para o cliente</p>
+            <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;" id="novo-confirmacao-mensagem"></div>
+            <a class="btn btn-whatsapp btn-block" id="novo-confirmacao-link" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar ao cliente</a>
+            <button class="btn btn-ghost btn-block" id="btn-concluir-novo">Concluir e ver atendimentos</button>
+          </div>
         </div>
       </div>
     </section>
@@ -868,6 +883,7 @@ function switchView(view){
   if(view==='supervisao') renderSupervisao();
   if(view==='agentes') renderAgentes();
   if(view==='catalogo') renderCatalogo();
+  if(view==='novo'){ $('#novo-confirmacao').style.display='none'; $('#novo-form-preview').style.display='block'; }
 }
 
 // ---------------- LINHAS ----------------
@@ -1491,14 +1507,14 @@ async function importarPlanilhaEquipamentos(file){
 
 // ---------------- NOVO ATENDIMENTO ----------------
 function montarMensagemInicial(){
-  const nome = $('#f-nome').value.trim() || '(cliente)';
   const grupo = $('#f-cliente-grupo').value.trim();
   const equipamento = $('#f-equipamento').value.trim();
   const descricao = $('#f-descricao').value.trim();
-  return `Olá, ${nome}! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: (gerado ao salvar)\n${grupo? 'Cliente: '+grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao? 'Problema relatado: '+descricao+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
+  const procedimento = $('#f-procedimento').value.trim();
+  return `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: (gerado ao salvar)\n${grupo? 'Cliente: '+grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao? 'Problema relatado: '+descricao+'\n':''}${procedimento? 'Procedimento sugerido: '+procedimento+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
 }
 
-['f-nome','f-cliente-grupo','f-equipamento','f-descricao'].forEach(id=>{
+['f-nome','f-cliente-grupo','f-equipamento','f-descricao','f-procedimento'].forEach(id=>{
   $('#'+id).addEventListener('input', ()=>{ $('#preview-text').textContent = montarMensagemInicial(); });
 });
 
@@ -1512,10 +1528,10 @@ function esconderResultadosNovo(){
   $('#novo-busca-resultados').innerHTML = '';
 }
 
-function renderResultadosBuscaNovo(tipo, itens){
+function renderResultadosBuscaNovo(tipo, itens, tituloExtra){
   const painel = $('#novo-busca-painel');
   const wrap = $('#novo-busca-resultados');
-  $('#novo-busca-titulo').textContent = tipo==='cliente' ? 'Clientes encontrados na base' : 'Equipamentos encontrados na base';
+  $('#novo-busca-titulo').textContent = tituloExtra || (tipo==='cliente' ? 'Clientes encontrados na base' : 'Equipamentos encontrados na base');
 
   if(!itens.length){
     wrap.innerHTML = '<p class="hint">Nenhum resultado — o que você digitar será salvo como cadastro novo.</p>';
@@ -1530,7 +1546,7 @@ function renderResultadosBuscaNovo(tipo, itens){
        </div>`
     : `<div class="autocomplete-item" style="border-radius:8px;" data-idx="${i}">
          <div style="font-weight:600;">${escapeHtml(item.nome)} ${item.categoria?`<span class="badge badge-em_andamento">${escapeHtml(item.categoria)}</span>`:''}</div>
-         <div style="font-size:11.5px;color:var(--text-muted);">${escapeHtml(item.clientes?.nome || 'sem unidade vinculada')}</div>
+         <div style="font-size:11.5px;color:var(--text-muted);">${escapeHtml(item.clientes?.nome || 'sem unidade vinculada')}${item.numero_serie?' · série '+escapeHtml(item.numero_serie):''}</div>
        </div>`
   ).join('');
 
@@ -1544,6 +1560,16 @@ function renderResultadosBuscaNovo(tipo, itens){
   painel.style.display = 'block';
 }
 
+// mostra, sem precisar digitar nada, os equipamentos já vinculados à
+// unidade selecionada — chamada ao selecionar um cliente e também ao
+// focar no campo Equipamento enquanto ele estiver vazio.
+async function mostrarEquipamentosDoCliente(clienteId, nomeCliente){
+  const { data } = await sb.from('equipamentos')
+    .select('*, clientes(id, nome, cliente_grupo, telefone)')
+    .eq('cliente_id', clienteId).eq('ativo', true).order('nome').limit(30);
+  renderResultadosBuscaNovo('equipamento', data || [], `Equipamentos de ${nomeCliente || 'unidade selecionada'}`);
+}
+
 function selecionarClienteNoNovoForm(cliente){
   catalogoSelecionado.cliente_id = cliente.id;
   $('#f-nome').value = cliente.nome || '';
@@ -1552,14 +1578,15 @@ function selecionarClienteNoNovoForm(cliente){
   const hint = $('#catalogo-selecionado-hint');
   hint.style.display = 'block';
   hint.textContent = `✓ Cliente selecionado do catálogo: ${cliente.nome}`;
-  esconderResultadosNovo();
   $('#preview-text').textContent = montarMensagemInicial();
+  mostrarEquipamentosDoCliente(cliente.id, cliente.nome);
 }
 
 let timerBuscaClienteNovo = null;
 $('#f-nome').addEventListener('input', ()=>{
   clearTimeout(timerBuscaClienteNovo);
   const q = $('#f-nome').value.trim();
+  if(!q){ catalogoSelecionado.cliente_id = null; esconderResultadosNovo(); return; }
   if(q.length < 2){ esconderResultadosNovo(); return; }
   timerBuscaClienteNovo = setTimeout(async ()=>{
     const { data } = await sb.from('clientes').select('*').eq('ativo', true)
@@ -1572,21 +1599,35 @@ let timerBuscaEquipNovo = null;
 $('#f-equipamento').addEventListener('input', ()=>{
   clearTimeout(timerBuscaEquipNovo);
   const q = $('#f-equipamento').value.trim();
-  if(q.length < 2){ esconderResultadosNovo(); return; }
+  if(q.length < 2){
+    if(catalogoSelecionado.cliente_id) mostrarEquipamentosDoCliente(catalogoSelecionado.cliente_id, $('#f-nome').value.trim());
+    else esconderResultadosNovo();
+    return;
+  }
   timerBuscaEquipNovo = setTimeout(async ()=>{
-    const { data } = await sb.from('equipamentos').select('*, clientes(id, nome, cliente_grupo, telefone)').eq('ativo', true)
-      .ilike('nome', `%${q}%`).limit(8);
+    let query = sb.from('equipamentos').select('*, clientes(id, nome, cliente_grupo, telefone)').eq('ativo', true).ilike('nome', `%${q}%`);
+    if(catalogoSelecionado.cliente_id) query = query.eq('cliente_id', catalogoSelecionado.cliente_id);
+    const { data } = await query.limit(8);
     renderResultadosBuscaNovo('equipamento', data || []);
   }, 280);
+});
+// ao focar no campo Equipamento (ainda vazio) com uma unidade já
+// selecionada, mostra direto a lista de equipamentos dela
+$('#f-equipamento').addEventListener('focus', ()=>{
+  if(!$('#f-equipamento').value.trim() && catalogoSelecionado.cliente_id){
+    mostrarEquipamentosDoCliente(catalogoSelecionado.cliente_id, $('#f-nome').value.trim());
+  }
 });
 
 function limparFormularioNovoAtendimento(){
   $('#f-nome').value=''; $('#f-cliente-grupo').value=''; $('#f-telefone').value='';
-  $('#f-equipamento').value=''; $('#f-descricao').value='';
+  $('#f-equipamento').value=''; $('#f-descricao').value=''; $('#f-procedimento').value=''; $('#f-observacoes').value='';
   $('#preview-text').textContent = 'Preencha o formulário ao lado para ver a prévia…';
   $('#catalogo-selecionado-hint').style.display = 'none';
   esconderResultadosNovo();
   catalogoSelecionado = { cliente_id: null, equipamento_id: null };
+  $('#novo-confirmacao').style.display = 'none';
+  $('#novo-form-preview').style.display = 'block';
 }
 
 $('#btn-cancelar-novo').addEventListener('click', ()=>{
@@ -1601,6 +1642,8 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
   const cliente_telefone = comDDI55($('#f-telefone').value);
   const equipamento = $('#f-equipamento').value.trim();
   const descricao_problema = $('#f-descricao').value.trim();
+  const procedimento_sugerido = $('#f-procedimento').value.trim();
+  const observacoes_cliente = $('#f-observacoes').value.trim();
 
   if(!linha_id){ toast('Cadastre e selecione uma linha primeiro.'); return; }
   if(!cliente_nome || !cliente_telefone){ toast('Informe nome e WhatsApp do cliente.'); return; }
@@ -1618,15 +1661,38 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
 
   if(error){ toast('Erro ao criar atendimento: '+error.message); return; }
 
-  const mensagem = `Olá, ${cliente_nome}! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${cliente_grupo? 'Cliente: '+cliente_grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
+  const mensagem = `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${cliente_grupo? 'Cliente: '+cliente_grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}${procedimento_sugerido? 'Procedimento sugerido: '+procedimento_sugerido+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
 
   await sb.from('interacoes').insert({
     atendimento_id: data.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: mensagem
   });
+  if(procedimento_sugerido){
+    await sb.from('interacoes').insert({
+      atendimento_id: data.id, agente_id: currentAgente.id, tipo:'procedimento', conteudo: procedimento_sugerido
+    });
+  }
+  if(observacoes_cliente){
+    await sb.from('interacoes').insert({
+      atendimento_id: data.id, agente_id: currentAgente.id, tipo:'nota_interna', conteudo: 'Observação do cliente: '+observacoes_cliente
+    });
+  }
 
   toast('Protocolo '+data.protocolo+' criado!');
+
+  // tentativa automática (pode ser bloqueada por bloqueador de pop-up,
+  // já que ocorre depois de chamadas assíncronas) — por isso o link
+  // clicável abaixo é o caminho garantido, não só um extra.
   window.open(waLink(cliente_telefone, mensagem), '_blank');
 
+  $('#novo-form-preview').style.display = 'none';
+  $('#novo-confirmacao').style.display = 'block';
+  $('#novo-confirmacao-protocolo').textContent = data.protocolo;
+  $('#novo-confirmacao-mensagem').textContent = mensagem;
+  const link = $('#novo-confirmacao-link');
+  link.href = waLink(cliente_telefone, mensagem);
+});
+
+$('#btn-concluir-novo').addEventListener('click', ()=>{
   limparFormularioNovoAtendimento();
   switchView('atendimentos');
 });
