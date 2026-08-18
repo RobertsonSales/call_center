@@ -2193,6 +2193,14 @@ function exportarExcel(dados, nomeArquivo, comAgente){
     return linha;
   });
   const ws = XLSX.utils.json_to_sheet(linhas);
+
+  // Larguras de coluna explícitas — sem isso, o Excel corta a exibição
+  // de colunas de texto mais longo (como o número do protocolo) sempre
+  // que a célula vizinha já tem conteúdo, dando a falsa impressão de
+  // que os valores são iguais quando na verdade só estão escondidos.
+  const larguras = { 'Protocolo':22, 'Cliente':30, 'WhatsApp':16, 'Equipamento':24, 'Linha':22, 'Agente':20, 'Status':14, 'Início':18, 'Fim':18, 'Duração':18 };
+  ws['!cols'] = Object.keys(linhas[0] || {}).map(k => ({ wch: larguras[k] || 16 }));
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Atendimentos');
   XLSX.writeFile(wb, nomeArquivo + '_' + new Date().toISOString().slice(0,10) + '.xlsx');
