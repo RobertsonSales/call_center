@@ -338,7 +338,7 @@
     <!-- ---------- DASHBOARD ---------- -->
     <section class="view active" id="view-dashboard">
       <div class="topbar">
-        <div><h1>Meu painel</h1><p>Visão consolidada dos protocolos que você atende.</p></div>
+        <div><h1>Painel</h1><p>Visão consolidada dos protocolos que você atende.</p></div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-ghost btn-sm" id="btn-abrir-busca">🔍 Buscar cliente/equipamento</button>
           <button class="btn btn-primary btn-sm" id="btn-atalho-novo">＋ Novo atendimento</button>
@@ -350,7 +350,7 @@
         <div class="card stat-card"><div class="stat-num" id="stat-hoje">–</div><div class="stat-label">Protocolos hoje</div></div>
       </div>
       <div class="card card-pad">
-        <p class="section-title">Meus últimos protocolos</p>
+        <p class="section-title">Últimos protocolos</p>
         <p class="section-sub">Os 8 atendimentos mais recentes sob sua responsabilidade.</p>
         <div id="dashboard-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
       </div>
@@ -408,7 +408,7 @@
 
     <!-- ---------- ATENDIMENTOS ATIVOS ---------- -->
     <section class="view" id="view-atendimentos">
-      <div class="topbar"><div><h1>Meus atendimentos ativos</h1><p>Seus chamados em aberto ou em andamento.</p></div></div>
+      <div class="topbar"><div><h1>Atendimentos ativos</h1><p>Seus chamados em aberto ou em andamento.</p></div></div>
       <div class="card card-pad">
         <div id="atendimentos-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
       </div>
@@ -416,7 +416,7 @@
 
     <!-- ---------- HISTÓRICO / AUDITORIA ---------- -->
     <section class="view" id="view-historico">
-      <div class="topbar"><div><h1>Meu histórico &amp; auditoria</h1><p>Protocolos que você atendeu, filtráveis por período, protocolo, linha ou status.</p></div></div>
+      <div class="topbar"><div><h1>Histórico &amp; auditoria</h1><p>Protocolos que você atendeu, filtráveis por período, protocolo, linha ou status.</p></div></div>
       <div class="card card-pad">
         <div class="filters">
           <div class="field"><label>De</label><input type="date" id="fh-de"/></div>
@@ -887,6 +887,23 @@ function switchView(view){
   if(view==='agentes') renderAgentes();
   if(view==='catalogo') renderCatalogo();
   if(view==='novo'){ $('#novo-confirmacao').style.display='none'; $('#novo-form-preview').style.display='block'; }
+}
+
+// Atualiza a listagem que estiver visível por trás do modal (painel,
+// atendimentos ativos, histórico ou supervisão) sempre que o status de
+// um atendimento muda dentro do modal — encerrar, transferir, ou só
+// passar de "aberto" para "em andamento" ao registrar um procedimento.
+// Sem isso, a lista de fundo ficava com o status desatualizado até o
+// agente navegar para outro lugar e voltar.
+function atualizarListaAtivaEmSegundoPlano(){
+  const viewAtiva = document.querySelector('.view.active');
+  if(!viewAtiva) return;
+  switch(viewAtiva.id){
+    case 'view-dashboard': renderDashboard(); break;
+    case 'view-atendimentos': renderAtendimentosAtivos(); break;
+    case 'view-historico': renderHistorico(); break;
+    case 'view-supervisao': renderSupervisao(); break;
+  }
 }
 
 // ---------------- LINHAS ----------------
@@ -2120,8 +2137,8 @@ async function renderHistorico(){
   bindRowClicks(wrap);
 }
 
-$('#btn-pdf-historico').addEventListener('click', ()=> exportarPDF(historicoDataAtual, 'Meu histórico de atendimentos', true, 'view'));
-$('#btn-excel-historico').addEventListener('click', ()=> exportarExcel(historicoDataAtual, 'meu_historico_atendimentos', true));
+$('#btn-pdf-historico').addEventListener('click', ()=> exportarPDF(historicoDataAtual, 'Histórico de atendimentos', true, 'view'));
+$('#btn-excel-historico').addEventListener('click', ()=> exportarExcel(historicoDataAtual, 'historico_atendimentos', true));
 
 // ---------------- EXPORTAÇÃO PDF / EXCEL ----------------
 const STATUS_LABEL = {aberto:'Aberto', em_andamento:'Em andamento', transferido:'Transferido', encerrado:'Encerrado'};
@@ -2255,7 +2272,8 @@ async function exportarProtocoloPDF(atendimento, interacoes, modo='download'){
   doc.setFont(undefined, 'normal');
 
   const body = (interacoes||[]).map(i=>[
-    fmtData(i.criado_em), i.tipo.replace('_',' '), i.agentes?.nome||'—', i.conteudo
+    fmtData(i.criado_em), i.tipo.replace('_',' '), i.agentes?.nome||'—',
+    i.conteudo + (i.destinatario_telefone ? ` (destinatário: +${i.destinatario_telefone})` : '')
   ]);
   doc.autoTable({
     startY: y1+4, head:[['Data','Tipo','Agente','Conteúdo']], body,
@@ -2288,6 +2306,7 @@ async function abrirDetalhe(id){
     <div class="interacao-item">
       <div class="top"><span class="tipo-tag">${i.tipo.replace('_',' ')}</span><span>${i.agentes?.nome||'—'} · ${fmtData(i.criado_em)}</span></div>
       <p>${escapeHtml(i.conteudo)}</p>
+      ${i.destinatario_telefone ? `<p style="margin-top:6px;font-size:11.5px;color:var(--text-muted);">📱 Destinatário: +${escapeHtml(i.destinatario_telefone)} · ${fmtData(i.criado_em)}</p>` : ''}
     </div>
   `).join('') || '<p class="hint">Nenhuma interação registrada ainda.</p>';
 
@@ -2403,6 +2422,7 @@ async function salvarInteracao(atendimento, enviarWhatsapp){
   }
   toast('Procedimento registrado.');
   abrirDetalhe(atendimento.id);
+  atualizarListaAtivaEmSegundoPlano();
 }
 
 async function salvarObservacaoCliente(atendimento){
@@ -2423,6 +2443,7 @@ async function encerrarAtendimento(atendimento){
   await sb.from('atendimentos').update({status:'encerrado', encerrado_em: new Date().toISOString()}).eq('id', atendimento.id);
   toast('Atendimento encerrado.');
   abrirDetalhe(atendimento.id);
+  atualizarListaAtivaEmSegundoPlano();
 }
 
 // ---------------- TRANSFERÊNCIA / REENVIO ----------------
@@ -2436,7 +2457,7 @@ async function abrirTransferencia(atendimento, interacoes){
     await sb.from('atendimentos').update({status:'transferido'}).eq('id', atendimento.id);
     await sb.from('interacoes').insert({
       atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'transferencia',
-      conteudo: 'Atendimento transferido para +'+numero
+      conteudo: 'Atendimento transferido para +'+numero, destinatario_telefone: numero
     });
   }catch(err){
     console.error('[transferencia]', err);
@@ -2476,6 +2497,7 @@ function mostrarConfirmacaoEnvioModal(atendimentoId, titulo, mensagem, numero){
   `;
   $('#btn-voltar-detalhe-modal').addEventListener('click', ()=> abrirDetalhe(atendimentoId));
   toast('Pronto — clique no botão para abrir o WhatsApp.');
+  atualizarListaAtivaEmSegundoPlano();
 }
 
 // reenvio a partir do histórico (mesma lógica de transferência, sem
@@ -2491,6 +2513,18 @@ async function reenviarProtocolo(id){
   if(!numeroDigitado) return;
   const numero = comDDI55(numeroDigitado);
   const resumo = montarResumoHistorico(atendimento, interacoes||[]);
+
+  try{
+    await sb.from('interacoes').insert({
+      atendimento_id: id, agente_id: currentAgente.id, tipo:'reenvio',
+      conteudo: 'Histórico reenviado para +'+numero, destinatario_telefone: numero
+    });
+  }catch(err){
+    console.error('[reenvio]', err);
+    toast('Erro ao registrar o reenvio: '+(err?.message||err));
+    return;
+  }
+
   mostrarConfirmacaoEnvioModal(id, 'Histórico pronto para reenvio', resumo, numero);
 }
 
