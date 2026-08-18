@@ -2118,6 +2118,38 @@ $('#btn-excel-historico').addEventListener('click', ()=> exportarExcel(historico
 // ---------------- EXPORTAÇÃO PDF / EXCEL ----------------
 const STATUS_LABEL = {aberto:'Aberto', em_andamento:'Em andamento', transferido:'Transferido', encerrado:'Encerrado'};
 
+// Cabeçalho institucional, reutilizado em todos os PDFs gerados pela
+// aplicação — faixa colorida com o nome do sistema, mais um subtítulo
+// (título do documento) alinhado à direita. Devolve a posição Y livre
+// para o conteúdo começar, já abaixo da faixa.
+function desenharCabecalhoPDF(doc, subtitulo){
+  const largura = doc.internal.pageSize.getWidth();
+  doc.setFillColor(15, 110, 99);
+  doc.rect(0, 0, largura, 24, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(14);
+  doc.text('GRUPO LABMEDIC', 14, 11);
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(9);
+  doc.text('Sistema de Atendimento Técnico Interno', 14, 18);
+  if(subtitulo){
+    doc.setFontSize(9);
+    doc.text(subtitulo, largura - 14, 14, { align: 'right' });
+  }
+  doc.setTextColor(20, 20, 20);
+  doc.setFont(undefined, 'normal');
+  return 34;
+}
+
+function abrirOuSalvarPDF(doc, nomeArquivo, modo){
+  if(modo === 'view'){
+    window.open(doc.output('bloburl'), '_blank');
+  }else{
+    doc.save(nomeArquivo);
+  }
+}
+
 function exportarExcel(dados, nomeArquivo, comAgente){
   if(!dados || !dados.length){ toast('Nada para exportar — ajuste os filtros.'); return; }
   const linhas = dados.map(a=>{
@@ -2141,15 +2173,19 @@ function exportarExcel(dados, nomeArquivo, comAgente){
   XLSX.writeFile(wb, nomeArquivo + '_' + new Date().toISOString().slice(0,10) + '.xlsx');
 }
 
-function exportarPDF(dados, titulo, comAgente){
+function exportarPDF(dados, titulo, comAgente, modo='download'){
   if(!dados || !dados.length){ toast('Nada para exportar — ajuste os filtros.'); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape' });
-  doc.setFontSize(14);
-  doc.text(titulo, 14, 16);
+  const y0 = desenharCabecalhoPDF(doc, titulo);
+
+  doc.setFontSize(13);
+  doc.setFont(undefined, 'bold');
+  doc.text(titulo, 14, y0);
+  doc.setFont(undefined, 'normal');
   doc.setFontSize(9);
   doc.setTextColor(120);
-  doc.text('Gerado em ' + new Date().toLocaleString('pt-BR') + ' · ' + dados.length + ' protocolo(s)', 14, 22);
+  doc.text('Gerado em ' + new Date().toLocaleString('pt-BR') + ' · ' + dados.length + ' protocolo(s)', 14, y0+6);
 
   const head = comAgente
     ? [['Protocolo','Cliente','WhatsApp','Linha','Agente','Status','Início','Duração']]
@@ -2163,21 +2199,26 @@ function exportarPDF(dados, titulo, comAgente){
   });
 
   doc.autoTable({
-    head, body, startY: 28, styles:{ fontSize: 8, cellPadding: 3 },
+    head, body, startY: y0+11, styles:{ fontSize: 8, cellPadding: 3 },
     headStyles:{ fillColor: [15,110,99] }
   });
 
-  doc.save(titulo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_') + '_' + new Date().toISOString().slice(0,10) + '.pdf');
+  const nomeArquivo = titulo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_') + '_' + new Date().toISOString().slice(0,10) + '.pdf';
+  abrirOuSalvarPDF(doc, nomeArquivo, modo);
 }
 
-async function exportarProtocoloPDF(atendimento, interacoes){
+async function exportarProtocoloPDF(atendimento, interacoes, modo='download'){
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const y0 = desenharCabecalhoPDF(doc, 'Protocolo ' + atendimento.protocolo);
+
   doc.setFontSize(15);
-  doc.text('Protocolo ' + atendimento.protocolo, 14, 18);
-  doc.setFontSize(10);
-  doc.setTextColor(90);
-  doc.text('Gerado em ' + new Date().toLocaleString('pt-BR'), 14, 25);
+  doc.setFont(undefined, 'bold');
+  doc.text('Protocolo ' + atendimento.protocolo, 14, y0);
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(110);
+  doc.text('Gerado em ' + new Date().toLocaleString('pt-BR'), 14, y0+6);
 
   doc.setFontSize(10);
   doc.setTextColor(20);
@@ -2195,24 +2236,26 @@ async function exportarProtocoloPDF(atendimento, interacoes){
     ['Problema inicial', atendimento.descricao_problema || '—']
   ];
   doc.autoTable({
-    startY: 32, theme:'plain', styles:{ fontSize: 9, cellPadding: 2 },
+    startY: y0+12, theme:'plain', styles:{ fontSize: 9, cellPadding: 2 },
     body: infoLinhas, columnStyles: { 0:{ fontStyle:'bold', cellWidth: 45 } }
   });
 
-  const y0 = doc.lastAutoTable.finalY + 8;
+  const y1 = doc.lastAutoTable.finalY + 8;
   doc.setFontSize(11);
-  doc.text('Histórico de procedimentos', 14, y0);
+  doc.setFont(undefined, 'bold');
+  doc.text('Histórico de procedimentos', 14, y1);
+  doc.setFont(undefined, 'normal');
 
   const body = (interacoes||[]).map(i=>[
     fmtData(i.criado_em), i.tipo.replace('_',' '), i.agentes?.nome||'—', i.conteudo
   ]);
   doc.autoTable({
-    startY: y0+4, head:[['Data','Tipo','Agente','Conteúdo']], body,
+    startY: y1+4, head:[['Data','Tipo','Agente','Conteúdo']], body,
     styles:{ fontSize: 8, cellPadding: 3 }, headStyles:{ fillColor:[15,110,99] },
     columnStyles: { 3:{ cellWidth: 90 } }
   });
 
-  doc.save('protocolo_' + atendimento.protocolo.toLowerCase() + '.pdf');
+  abrirOuSalvarPDF(doc, 'protocolo_' + atendimento.protocolo.toLowerCase() + '.pdf', modo);
 }
 
 // ---------------- DETALHE / MODAL ----------------
@@ -2279,7 +2322,8 @@ async function abrirDetalhe(id){
       <a class="btn btn-whatsapp btn-sm" target="_blank" href="${waLink(atendimento.cliente_telefone,'Olá '+atendimento.cliente_nome+', tudo bem? Sobre o protocolo '+atendimento.protocolo+': ')}">Abrir WhatsApp do cliente</a>
       ${atendimento.status!=='encerrado' ? `<button class="btn btn-ghost btn-sm" id="btn-encerrar">Encerrar atendimento</button>`:''}
       <button class="btn btn-ghost btn-sm" id="btn-transferir">Transferir / reenviar histórico</button>
-      <button class="btn btn-ghost btn-sm" id="btn-exportar-pdf-protocolo">⬇ Exportar PDF</button>
+      <button class="btn btn-ghost btn-sm" id="btn-visualizar-pdf-protocolo">👁 Visualizar PDF</button>
+      <button class="btn btn-ghost btn-sm" id="btn-exportar-pdf-protocolo">⬇ Baixar PDF</button>
     </div>
 
     <p class="section-title" style="margin-bottom:10px;">Registrar novo procedimento</p>
@@ -2306,7 +2350,8 @@ async function abrirDetalhe(id){
   const btnEnc = $('#btn-encerrar');
   if(btnEnc) btnEnc.addEventListener('click', ()=> encerrarAtendimento(atendimento));
   $('#btn-transferir').addEventListener('click', ()=> abrirTransferencia(atendimento, interacoes||[]));
-  $('#btn-exportar-pdf-protocolo').addEventListener('click', ()=> exportarProtocoloPDF(atendimento, interacoes||[]));
+  $('#btn-visualizar-pdf-protocolo').addEventListener('click', ()=> exportarProtocoloPDF(atendimento, interacoes||[], 'view'));
+  $('#btn-exportar-pdf-protocolo').addEventListener('click', ()=> exportarProtocoloPDF(atendimento, interacoes||[], 'download'));
   const btnReat = $('#btn-reatribuir');
   if(btnReat) btnReat.addEventListener('click', ()=> reatribuirAtendimento(atendimento));
 }
