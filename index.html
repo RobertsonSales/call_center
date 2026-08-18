@@ -126,6 +126,17 @@
   }
   .phone-group input{border-radius:0 var(--radius-sm) var(--radius-sm) 0;}
 
+  .autocomplete-wrap{position:relative;}
+  .autocomplete-list{
+    display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:70;
+    background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius-sm);
+    box-shadow:var(--shadow);max-height:240px;overflow-y:auto;
+  }
+  .autocomplete-item{padding:9px 12px;font-size:13.5px;color:var(--text);cursor:pointer;}
+  .autocomplete-item:hover,.autocomplete-item.active{background:var(--primary-light);color:var(--primary-dark);}
+  [data-theme="dark"] .autocomplete-item:hover,[data-theme="dark"] .autocomplete-item.active{color:var(--primary);}
+  .autocomplete-empty{padding:9px 12px;font-size:13px;color:var(--text-muted);}
+
   .theme-toggle{
     position:fixed;top:16px;right:16px;z-index:60;width:38px;height:38px;border-radius:50%;
     border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:16px;
@@ -234,7 +245,7 @@
     padding:0 14px 10px;font-weight:700;border-bottom:1.5px solid var(--border);
   }
   tbody td{padding:13px 14px;border-bottom:1px solid var(--border);vertical-align:middle;}
-  tbody tr:hover{background:#FAFBFC;}
+  tbody tr:hover{background:var(--bg);}
   tbody tr{cursor:pointer;}
   .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:700;}
   .badge-aberto{background:var(--info-light);color:var(--info);}
@@ -448,7 +459,10 @@
           <p class="section-title">Novo equipamento</p>
           <div class="field"><label>Nome</label><input id="fe-nome" placeholder="Ex: Analisador Bioquímico X200"/></div>
           <div class="field"><label>Categoria</label><input id="fe-categoria" placeholder="Ex: Bioquímica, Hematologia"/></div>
-          <div class="field"><label>Cliente onde está instalado</label><select id="fe-cliente"></select></div>
+          <div class="field"><label>Cliente onde está instalado</label>
+            <input id="fe-cliente-busca" placeholder="Digite para buscar a unidade/cliente…" autocomplete="off"/>
+            <input type="hidden" id="fe-cliente"/>
+          </div>
           <div class="field"><label>Número de série (opcional)</label><input id="fe-serie" placeholder="Ex: SN-88213"/></div>
           <button class="btn btn-primary btn-block" id="btn-criar-equipamento">Adicionar equipamento</button>
         </div>
@@ -549,11 +563,19 @@
       <button class="modal-close" id="modal-busca-close">✕</button>
     </div>
     <div class="modal-body">
+      <div class="field"><label>Selecionar equipamento diretamente</label>
+        <input id="busca-equip-input" placeholder="Digite o nome do equipamento para selecionar na hora…" autocomplete="off"/>
+      </div>
+      <p class="hint" style="margin:-6px 0 14px;">Ou refine com os filtros abaixo para ver uma lista de resultados:</p>
+
       <div class="field"><label>Busca inteligente</label>
         <input id="busca-texto" placeholder="Digite parte do nome do cliente, equipamento ou categoria…"/>
       </div>
       <div class="filters" style="margin-bottom:14px;">
-        <div class="field"><label>Cliente</label><select id="busca-cliente"><option value="">Todos</option></select></div>
+        <div class="field"><label>Cliente</label>
+          <input id="busca-cliente-input" placeholder="Todos" autocomplete="off"/>
+          <input type="hidden" id="busca-cliente-id"/>
+        </div>
         <div class="field"><label>Categoria</label><select id="busca-categoria"><option value="">Todas</option></select></div>
         <button class="btn btn-primary btn-sm" id="btn-executar-busca">Buscar</button>
         <button class="btn btn-ghost btn-sm" id="btn-limpar-busca">Limpar</button>
@@ -1001,9 +1023,90 @@ async function renderEquipamentos(){
   });
 }
 
+// ---------------- AUTOCOMPLETE (caixas de busca inteligente) ----------------
+// Variante "local": filtra um array já carregado em memória (ex: lista
+// de clientes). getDados é uma função para sempre ler os dados mais
+// recentes do cache, mesmo que ele seja recarregado depois de montado.
+function montarAutocompleteLocal({ inputEl, hiddenEl, getDados, getLabel, getId, onSelect }){
+  if(!inputEl || inputEl.dataset.acMontado) return;
+  inputEl.dataset.acMontado = '1';
+  const wrap = document.createElement('div');
+  wrap.className = 'autocomplete-wrap';
+  inputEl.parentNode.insertBefore(wrap, inputEl);
+  wrap.appendChild(inputEl);
+  const list = document.createElement('div');
+  list.className = 'autocomplete-list';
+  wrap.appendChild(list);
+
+  function render(query){
+    const q = query.trim().toLowerCase();
+    const dados = getDados() || [];
+    const matches = (!q ? dados : dados.filter(d=>getLabel(d).toLowerCase().includes(q))).slice(0,8);
+    if(!matches.length){ list.innerHTML = '<div class="autocomplete-empty">Nenhum resultado</div>'; list.style.display='block'; return; }
+    list.innerHTML = matches.map((m,i)=>`<div class="autocomplete-item" data-idx="${i}">${escapeHtml(getLabel(m))}</div>`).join('');
+    list.style.display = 'block';
+    list.querySelectorAll('.autocomplete-item').forEach(el=>{
+      el.addEventListener('mousedown', (ev)=>{
+        ev.preventDefault();
+        const item = matches[+el.dataset.idx];
+        inputEl.value = getLabel(item);
+        if(hiddenEl) hiddenEl.value = getId(item);
+        list.style.display = 'none';
+        if(onSelect) onSelect(item);
+      });
+    });
+  }
+  inputEl.addEventListener('input', ()=>{ if(hiddenEl) hiddenEl.value=''; render(inputEl.value); });
+  inputEl.addEventListener('focus', ()=> render(inputEl.value));
+  inputEl.addEventListener('blur', ()=> setTimeout(()=>{ list.style.display='none'; }, 150));
+}
+
+// Variante "remota": busca no Supabase conforme o usuário digita
+// (com debounce), usada para o catálogo de equipamentos — grande
+// demais para carregar tudo de uma vez no navegador.
+function montarAutocompleteRemoto({ inputEl, buscarFn, onSelect, minChars=2, debounceMs=280 }){
+  if(!inputEl || inputEl.dataset.acMontado) return;
+  inputEl.dataset.acMontado = '1';
+  const wrap = document.createElement('div');
+  wrap.className = 'autocomplete-wrap';
+  inputEl.parentNode.insertBefore(wrap, inputEl);
+  wrap.appendChild(inputEl);
+  const list = document.createElement('div');
+  list.className = 'autocomplete-list';
+  wrap.appendChild(list);
+  let timer = null;
+
+  inputEl.addEventListener('input', ()=>{
+    clearTimeout(timer);
+    const q = inputEl.value.trim();
+    if(q.length < minChars){ list.style.display='none'; return; }
+    timer = setTimeout(async ()=>{
+      const resultados = await buscarFn(q);
+      if(!resultados.length){ list.innerHTML = '<div class="autocomplete-empty">Nenhum resultado</div>'; list.style.display='block'; return; }
+      list.innerHTML = resultados.map((r,i)=>`<div class="autocomplete-item" data-idx="${i}">${r.label}</div>`).join('');
+      list.style.display = 'block';
+      list.querySelectorAll('.autocomplete-item').forEach(el=>{
+        el.addEventListener('mousedown', (ev)=>{
+          ev.preventDefault();
+          const item = resultados[+el.dataset.idx];
+          inputEl.value = item.textoSimples;
+          list.style.display = 'none';
+          onSelect(item.raw);
+        });
+      });
+    }, debounceMs);
+  });
+  inputEl.addEventListener('blur', ()=> setTimeout(()=>{ list.style.display='none'; }, 150));
+}
+
 async function popularSelectClientesEquipamento(){
-  const sel = $('#fe-cliente');
-  if(sel) sel.innerHTML = clientesCache.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('') || '<option value="">Cadastre um cliente primeiro</option>';
+  montarAutocompleteLocal({
+    inputEl: $('#fe-cliente-busca'),
+    hiddenEl: $('#fe-cliente'),
+    getDados: ()=> clientesCache,
+    getLabel: c => c.nome,
+    getId: c => c.id
+  });
 }
 
 $('#btn-criar-cliente')?.addEventListener('click', async ()=>{
@@ -1026,10 +1129,11 @@ $('#btn-criar-equipamento')?.addEventListener('click', async ()=>{
   const cliente_id = $('#fe-cliente').value || null;
   const numero_serie = $('#fe-serie').value.trim() || null;
   if(!nome){ toast('Informe o nome do equipamento.'); return; }
+  if($('#fe-cliente-busca').value.trim() && !cliente_id){ toast('Selecione o cliente na lista sugerida (clique numa opção da busca).'); return; }
   const { error } = await sb.from('equipamentos').insert({ nome, categoria: categoria||null, cliente_id, numero_serie });
   if(error){ toast('Erro ao criar equipamento: '+(error.message.includes('duplicate')?'já existe um equipamento com esse número de série.':error.message)); return; }
   toast('Equipamento cadastrado.');
-  $('#fe-nome').value=''; $('#fe-categoria').value=''; $('#fe-serie').value='';
+  $('#fe-nome').value=''; $('#fe-categoria').value=''; $('#fe-serie').value=''; $('#fe-cliente-busca').value=''; $('#fe-cliente').value='';
   await renderEquipamentos();
 });
 
@@ -1038,6 +1142,28 @@ async function abrirBuscaCatalogo(){
   $('#modal-busca-overlay').classList.add('active');
   $('#busca-import-area').style.display = currentAgente.is_admin ? 'block' : 'none';
   await carregarFiltrosBusca();
+  montarAutocompleteLocal({
+    inputEl: $('#busca-cliente-input'),
+    hiddenEl: $('#busca-cliente-id'),
+    getDados: ()=> clientesCache,
+    getLabel: c => c.nome,
+    getId: c => c.id
+  });
+  montarAutocompleteRemoto({
+    inputEl: $('#busca-equip-input'),
+    minChars: 2,
+    buscarFn: async (q)=>{
+      const { data } = await sb.from('equipamentos')
+        .select('*, clientes(id, nome, cliente_grupo, telefone)')
+        .eq('ativo', true).ilike('nome', `%${q}%`).limit(8);
+      return (data||[]).map(e=>({
+        label: `${escapeHtml(e.nome)} <span style="color:var(--text-muted);">— ${escapeHtml(e.clientes?.nome||'sem unidade')}</span>`,
+        textoSimples: e.nome,
+        raw: e
+      }));
+    },
+    onSelect: (equip)=> selecionarDoCatalogo(equip)
+  });
 }
 function fecharBuscaCatalogo(){ $('#modal-busca-overlay').classList.remove('active'); }
 
@@ -1048,8 +1174,7 @@ $('#modal-busca-overlay')?.addEventListener('click', (e)=>{ if(e.target.id==='mo
 
 async function carregarFiltrosBusca(){
   const { data: clientes } = await sb.from('clientes').select('id, nome').eq('ativo', true).order('nome');
-  const selCliente = $('#busca-cliente');
-  selCliente.innerHTML = '<option value="">Todos</option>' + (clientes||[]).map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('');
+  clientesCache = clientes || [];
 
   const { data: equips } = await sb.from('equipamentos').select('categoria').not('categoria','is',null);
   const categorias = [...new Set((equips||[]).map(e=>e.categoria).filter(Boolean))].sort();
@@ -1060,7 +1185,8 @@ async function carregarFiltrosBusca(){
 $('#btn-executar-busca')?.addEventListener('click', executarBusca);
 $('#busca-texto')?.addEventListener('keydown', e=>{ if(e.key==='Enter') executarBusca(); });
 $('#btn-limpar-busca')?.addEventListener('click', ()=>{
-  $('#busca-texto').value=''; $('#busca-cliente').value=''; $('#busca-categoria').value='';
+  $('#busca-texto').value=''; $('#busca-cliente-input').value=''; $('#busca-cliente-id').value='';
+  $('#busca-categoria').value=''; $('#busca-equip-input').value='';
   $('#busca-resultados').innerHTML = '<p class="hint">Digite algo ou use os filtros e clique em "Buscar".</p>';
 });
 
@@ -1069,7 +1195,7 @@ async function executarBusca(){
   wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Buscando…</div>';
 
   const texto = $('#busca-texto').value.trim();
-  const clienteId = $('#busca-cliente').value;
+  const clienteId = $('#busca-cliente-id').value;
   const categoria = $('#busca-categoria').value;
 
   let q = sb.from('equipamentos').select('*, clientes(id, nome, cliente_grupo, telefone)').eq('ativo', true).limit(40);
