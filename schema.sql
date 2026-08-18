@@ -68,9 +68,13 @@ create table if not exists atendimentos (
   status              text not null default 'aberto'
                         check (status in ('aberto','em_andamento','transferido','encerrado')),
   agente_id           uuid references agentes(id),
-  criado_em           timestamptz not null default now(),
+  criado_em           timestamptz not null default now(),  -- horário de início do atendimento
+  encerrado_em        timestamptz,                         -- horário de fim (preenchido ao encerrar)
   atualizado_em       timestamptz not null default now()
 );
+
+-- Garante a coluna em bancos que já tinham a tabela criada antes desta versão.
+alter table atendimentos add column if not exists encerrado_em timestamptz;
 
 create index if not exists idx_atendimentos_protocolo on atendimentos(protocolo);
 create index if not exists idx_atendimentos_criado_em on atendimentos(criado_em);
@@ -169,24 +173,35 @@ alter table interacoes      enable row level security;
 alter table auditoria_linha enable row level security;
 
 -- Cadastros de apoio: leitura liberada a qualquer agente autenticado.
+drop policy if exists "agentes autenticados leem agentes" on agentes;
 create policy "agentes autenticados leem agentes"    on agentes for select using (auth.role() = 'authenticated');
+
+drop policy if exists "agentes autenticados leem linhas" on linhas;
 create policy "agentes autenticados leem linhas"     on linhas  for select using (auth.role() = 'authenticated');
+
+drop policy if exists "agentes autenticados gerenciam linhas" on linhas;
 create policy "agentes autenticados gerenciam linhas" on linhas for insert with check (auth.role() = 'authenticated');
+
+drop policy if exists "agentes autenticados atualizam linhas" on linhas;
 create policy "agentes autenticados atualizam linhas" on linhas for update using (auth.role() = 'authenticated');
 
 -- Atendimentos: só o agente dono do chamado (agente_id = auth.uid())
 -- pode ver, criar ou atualizar. Um agente não enxerga o chamado de outro.
+drop policy if exists "agente ve so os proprios atendimentos" on atendimentos;
 create policy "agente ve so os proprios atendimentos"
   on atendimentos for select using (agente_id = auth.uid());
 
+drop policy if exists "agente cria atendimento como dono" on atendimentos;
 create policy "agente cria atendimento como dono"
   on atendimentos for insert with check (agente_id = auth.uid());
 
+drop policy if exists "agente atualiza so os proprios atendimentos" on atendimentos;
 create policy "agente atualiza so os proprios atendimentos"
   on atendimentos for update using (agente_id = auth.uid());
 
 -- Interações: seguem a posse do atendimento ao qual pertencem — um
 -- agente só lê/grava interações de um atendimento que é seu.
+drop policy if exists "agente ve interacoes dos proprios atendimentos" on interacoes;
 create policy "agente ve interacoes dos proprios atendimentos"
   on interacoes for select using (
     exists (
@@ -195,6 +210,7 @@ create policy "agente ve interacoes dos proprios atendimentos"
     )
   );
 
+drop policy if exists "agente cria interacoes nos proprios atendimentos" on interacoes;
 create policy "agente cria interacoes nos proprios atendimentos"
   on interacoes for insert with check (
     exists (
@@ -204,6 +220,7 @@ create policy "agente cria interacoes nos proprios atendimentos"
   );
 
 -- Auditoria: cada agente só consulta os eventos dos próprios atendimentos.
+drop policy if exists "agente ve auditoria dos proprios atendimentos" on auditoria_linha;
 create policy "agente ve auditoria dos proprios atendimentos"
   on auditoria_linha for select using (agente_id = auth.uid());
 -- (inserção em auditoria_linha só acontece via trigger, não precisa de policy de insert para o cliente)
@@ -227,20 +244,34 @@ as $$
   select coalesce((select is_admin from agentes where id = auth.uid()), false);
 $$;
 
+drop policy if exists "supervisor ve todos os atendimentos" on atendimentos;
 create policy "supervisor ve todos os atendimentos"
   on atendimentos for select using (public.is_admin());
 
+drop policy if exists "supervisor atualiza qualquer atendimento" on atendimentos;
 create policy "supervisor atualiza qualquer atendimento"
   on atendimentos for update using (public.is_admin());
 
+drop policy if exists "supervisor ve todas as interacoes" on interacoes;
 create policy "supervisor ve todas as interacoes"
   on interacoes for select using (public.is_admin());
 
+drop policy if exists "supervisor cria interacoes em qualquer atendimento" on interacoes;
 create policy "supervisor cria interacoes em qualquer atendimento"
   on interacoes for insert with check (public.is_admin());
 
+drop policy if exists "supervisor ve toda a auditoria" on auditoria_linha;
 create policy "supervisor ve toda a auditoria"
   on auditoria_linha for select using (public.is_admin());
+
+-- Gestão de agentes (ativar/inativar, promover/remover supervisor):
+-- só quem já é supervisor pode atualizar a tabela "agentes". A checagem
+-- roda de novo DEPOIS da alteração (with check = using, por padrão),
+-- então nem um supervisor consegue remover o próprio papel de supervisor
+-- por engano — a policy bloqueia a própria atualização nesse caso.
+drop policy if exists "supervisor gerencia perfis de agentes" on agentes;
+create policy "supervisor gerencia perfis de agentes"
+  on agentes for update using (public.is_admin());
 
 -- Para promover um agente a Supervisor, depois de ele já ter feito
 -- login ao menos uma vez (o que cria a linha em "agentes"), rode:

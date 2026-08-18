@@ -7,10 +7,14 @@ transferência entre especialistas e auditoria — tudo gravado no Supabase.
 
 ## Arquivos
 - `index.html` — aplicação completa (HTML + CSS + JS, sem build).
-- `schema.sql` — script único para criar todo o banco no Supabase.
-- `api/config.js` — função serverless do Vercel que entrega a URL e a
-  chave anon do Supabase ao front-end a partir de variáveis de
-  ambiente (a chave não fica escrita em `index.html` nem no repositório).
+- `schema.sql` — script único para criar/atualizar todo o banco no Supabase.
+- `package.json` — declara a dependência `@supabase/supabase-js` usada
+  pela função serverless `api/agentes.js` (o Vercel instala sozinho).
+- `api/config.js` — função serverless que entrega URL/chave anon do
+  Supabase ao front-end a partir de variáveis de ambiente.
+- `api/agentes.js` — função serverless que cria e exclui contas de
+  agente usando a *service role key* (nunca exposta ao navegador),
+  só executável por quem já está logado como Supervisor.
 - `.env.example` — modelo das variáveis de ambiente, para testar localmente.
 - `.gitignore` — garante que seu `.env` local nunca seja commitado.
 
@@ -40,12 +44,20 @@ transferência entre especialistas e auditoria — tudo gravado no Supabase.
    de todos os agentes e linhas (menu "Supervisão", visível só para
    quem tem `is_admin = true`) — os demais agentes continuam vendo
    apenas os próprios chamados.
-6. Vá em **Project Settings → API** e copie:
+6. Vá em **Project Settings → API** e copie três valores:
    - **Project URL**
    - **anon public key**
+   - **service_role key** (na mesma tela, um pouco mais abaixo — vem
+     marcada como "secret")
 
    > A chave `anon` é segura para expor no front-end: o controle de
    > acesso real é feito pelas políticas de RLS no banco, não pela chave.
+   > **A `service_role key` é diferente: NUNCA deve chegar ao
+   > navegador.** Ela ignora todas as políticas de RLS — é o
+   > equivalente a uma senha mestra do banco. Ela só é usada dentro da
+   > função `api/agentes.js`, que roda no servidor do Vercel, para
+   > criar/excluir contas de agente. Guarde-a com o mesmo cuidado que
+   > uma senha de administrador.
 
 ---
 
@@ -88,16 +100,18 @@ pasta `api/` com o `config.js` dentro dela.)
 1. Acesse **vercel.com** → **Add New → Project**.
 2. Importe o repositório `central-atendimento` do GitHub.
 3. **Antes de clicar em Deploy**, abra **Environment Variables** e
-   cadastre duas variáveis:
+   cadastre três variáveis:
 
-   | Name                 | Value                                   |
-   |----------------------|------------------------------------------|
-   | `SUPABASE_URL`       | a Project URL copiada no passo 1.6       |
-   | `SUPABASE_ANON_KEY`  | a anon public key copiada no passo 1.6   |
+   | Name                         | Value                                        |
+   |------------------------------|-----------------------------------------------|
+   | `SUPABASE_URL`               | a Project URL copiada no passo 1.6             |
+   | `SUPABASE_ANON_KEY`          | a anon public key copiada no passo 1.6         |
+   | `SUPABASE_SERVICE_ROLE_KEY`  | a service_role key copiada no passo 1.6        |
 
    Marque os três ambientes (Production, Preview, Development).
-4. O projeto é um site estático com uma função serverless em `api/`
-   (padrão suportado nativamente pelo Vercel) — não é preciso
+4. Como agora existe um `package.json` com uma dependência
+   (`@supabase/supabase-js`, usada só pela função `api/agentes.js`), o
+   Vercel detecta e instala sozinho — continua não sendo preciso
    configurar build command nem output directory. Clique em **Deploy**.
 5. Em alguns minutos você recebe uma URL pública, ex:
    `https://central-atendimento.vercel.app`. A página busca
@@ -139,7 +153,111 @@ Variables** no Vercel e clicar em **Redeploy** — sem tocar no código.
 
 ---
 
-## 6) Pontos de atenção e possíveis evoluções
+## 6) Funcionalidades adicionadas: CRUD de agentes/linhas e exportação
+
+**Linhas de WhatsApp** (menu "Linhas WhatsApp", qualquer agente):
+- Criar, editar (nome/número), ativar/inativar e excluir.
+- A exclusão só é permitida se a linha nunca recebeu atendimentos (o
+  banco protege isso via chave estrangeira); se houver histórico
+  vinculado, a aplicação orienta a usar "Inativar" em vez de excluir —
+  isso preserva a auditoria.
+
+**Agentes** (menu "Agentes", só para Supervisor):
+- Lista todos os agentes com papel (Agente/Supervisor) e status
+  (Ativo/Inativo).
+- Permite promover/remover o papel de Supervisor e ativar/inativar um
+  acesso, direto pela interface.
+- **Criar uma conta nova continua sendo feito no painel do Supabase**
+  (Authentication → Users → Add user) — por segurança, a aplicação não
+  cria contas de autenticação pelo navegador. Assim que a pessoa é
+  criada lá, o perfil aparece automaticamente nesta tela.
+- Um agente **inativado** tem a sessão encerrada automaticamente no
+  próximo login (a aplicação verifica `agentes.ativo` e desloga se for
+  `false`). Um supervisor não consegue inativar nem remover o próprio
+  papel de supervisor pela tela (trava tanto na interface quanto na
+  policy do banco — veja a seção 7 do `schema.sql`).
+
+**Exportação em PDF e Excel**:
+- Nas telas **Histórico** e **Supervisão**, os botões "⬇ PDF" e
+  "⬇ Excel" exportam exatamente os resultados filtrados na tela — filtre
+  por período/protocolo/linha/agente/status antes de exportar.
+- No detalhe de qualquer protocolo (clique numa linha da tabela), o
+  botão "⬇ Exportar PDF" gera um PDF só daquele atendimento, com os
+  dados do chamado e o histórico completo de procedimentos — útil para
+  anexar a um e-mail ou arquivar fora do sistema.
+- A geração roda toda no navegador (bibliotecas jsPDF e SheetJS via
+  CDN) — nenhum dado é enviado a um servidor externo para gerar os
+  arquivos.
+
+> **Importante — se você já rodou o `schema.sql` antes**: esta versão
+> adicionou uma policy nova (`supervisor gerencia perfis de agentes`)
+> necessária para os botões de ativar/inativar e promover/remover
+> supervisor funcionarem. Cole o `schema.sql` atualizado no SQL Editor
+> e rode de novo — como todo o script agora é idempotente (`drop
+> policy if exists` antes de cada `create policy`), isso não duplica
+> nada, só adiciona a policy que faltava.
+
+---
+
+## 7) Identidade visual, sessão, tema, mobile, máscara e duração
+
+**Identidade**: título e cabeçalhos agora exibem "GRUPO LABMEDIC –
+Sistema de Atendimento Técnico Interno".
+
+**Logout automático ao fechar a aba**: a sessão do Supabase passou a
+usar `sessionStorage` em vez de `localStorage` — o próprio navegador
+apaga esse armazenamento quando a aba é fechada, então a pessoa
+precisa logar de novo na próxima vez que abrir a aplicação. Efeito
+colateral esperado: abrir a aplicação em duas abas ao mesmo tempo exige
+login em cada uma (elas não compartilham sessão) — isso é intencional
+para este modelo de "logout ao fechar".
+
+**Tema claro/escuro**: botão flutuante (ícone de lua/sol) no canto
+superior direito, em qualquer tela. A escolha fica salva no navegador
+(`localStorage`) e, na primeira visita, a aplicação usa o tema que o
+sistema operacional do agente já está configurado para usar.
+
+**Responsividade mobile**: em telas estreitas, a barra lateral vira um
+menu hambúrguer deslizante, e as tabelas ganham rolagem horizontal em
+vez de espremer as colunas.
+
+**Máscara de celular pt-BR**: os campos de WhatsApp do cliente e de
+número de linha mostram um prefixo fixo `+55` e formatam o restante
+como `(DD) 9XXXX-XXXX` enquanto o agente digita. Internamente o número
+é sempre salvo completo, com o DDI — o `+55` some do campo, mas não do
+dado gravado no banco. (Os dois únicos pontos que ainda usam uma
+caixinha de texto simples em vez da máscara são a edição de linha via
+"Editar" e a transferência de atendimento, que pedem o número por uma
+janela de diálogo do navegador — funcionam normalmente, só sem a
+formatação visual.)
+
+**Horário de início/fim e duração**: todo atendimento já tinha o
+horário de criação (início). Agora, ao clicar em "Encerrar
+atendimento", o horário atual é gravado como fim
+(`atendimentos.encerrado_em`), e a aplicação calcula a duração
+automaticamente (e mostra "em andamento" enquanto não há horário de
+fim) — visível nas tabelas de Histórico/Supervisão, no detalhe do
+protocolo e em todas as exportações PDF/Excel.
+
+**CRUD completo de Agentes com criação/exclusão pelo navegador**: além
+de ativar/inativar e promover/remover supervisor (já existentes), o
+menu Agentes agora tem um formulário para **criar** um agente novo
+(nome, e-mail, senha) e um botão para **excluir** um agente —
+substituindo a necessidade de ir ao painel do Supabase para essas duas
+ações. Por trás dos panos, isso passa pela função `api/agentes.js`, que
+roda no servidor (nunca no navegador) e confere que quem está pedindo
+é mesmo um Supervisor logado antes de tocar em qualquer conta.
+
+> **Se você já tinha rodado o schema antes desta versão**: além de
+> rodar o `schema.sql` atualizado (para a coluna `encerrado_em`), é
+> necessário também configurar a nova variável de ambiente
+> `SUPABASE_SERVICE_ROLE_KEY` no Vercel (passo 4 acima) e fazer um novo
+> deploy — sem ela, criar/excluir agentes pela aplicação não funciona
+> (as demais funções continuam normais).
+
+---
+
+## 8) Pontos de atenção e possíveis evoluções
 
 - **RLS por agente + Supervisor**: cada agente comum só vê, cria e
   atualiza os próprios atendimentos (`agente_id = auth.uid()`) —

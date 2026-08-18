@@ -1,0 +1,9 @@
+{
+  "name": "central-atendimento-tecnico",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Central de Atendimento Técnico via WhatsApp — Grupo Labmedic",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4"
+  }
+}
