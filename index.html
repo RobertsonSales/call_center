@@ -398,7 +398,9 @@
             <p class="section-title">Mensagem para o cliente</p>
             <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;" id="novo-confirmacao-mensagem"></div>
             <a class="btn btn-whatsapp btn-block" id="novo-confirmacao-link" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar ao cliente</a>
-            <button class="btn btn-ghost btn-block" id="btn-concluir-novo">Concluir e ver atendimentos</button>
+            <p class="hint" style="margin-bottom:10px;">A conversa continua no WhatsApp real — use o botão abaixo para ir registrando novos procedimentos e observações à medida que forem surgindo, ou para encerrar quando o caso for resolvido.</p>
+            <button class="btn btn-primary btn-block" id="btn-continuar-atendimento" style="margin-bottom:10px;">Continuar atendimento (procedimentos, observações ou encerrar)</button>
+            <button class="btn btn-ghost btn-block" id="btn-concluir-novo">Voltar para a lista de atendimentos</button>
           </div>
         </div>
       </div>
@@ -645,6 +647,7 @@ let agentesCache = [];
 let historicoDataAtual = [];
 let supervisaoDataAtual = [];
 let catalogoSelecionado = { cliente_id: null, equipamento_id: null };
+let ultimoAtendimentoCriadoId = null;
 let clientesCache = [];
 
 async function iniciarSupabase(){
@@ -1507,11 +1510,12 @@ async function importarPlanilhaEquipamentos(file){
 
 // ---------------- NOVO ATENDIMENTO ----------------
 function montarMensagemInicial(){
+  const nome = $('#f-nome').value.trim();
   const grupo = $('#f-cliente-grupo').value.trim();
   const equipamento = $('#f-equipamento').value.trim();
   const descricao = $('#f-descricao').value.trim();
   const procedimento = $('#f-procedimento').value.trim();
-  return `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: (gerado ao salvar)\n${grupo? 'Cliente: '+grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao? 'Problema relatado: '+descricao+'\n':''}${procedimento? 'Procedimento sugerido: '+procedimento+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
+  return `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: (gerado ao salvar)\n${nome? 'Unidade: '+nome+'\n':''}${grupo? 'Cliente: '+grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao? 'Problema relatado: '+descricao+'\n':''}${procedimento? 'Procedimento sugerido: '+procedimento+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
 }
 
 ['f-nome','f-cliente-grupo','f-equipamento','f-descricao','f-procedimento'].forEach(id=>{
@@ -1534,7 +1538,9 @@ function renderResultadosBuscaNovo(tipo, itens, tituloExtra){
   $('#novo-busca-titulo').textContent = tituloExtra || (tipo==='cliente' ? 'Clientes encontrados na base' : 'Equipamentos encontrados na base');
 
   if(!itens.length){
-    wrap.innerHTML = '<p class="hint">Nenhum resultado — o que você digitar será salvo como cadastro novo.</p>';
+    wrap.innerHTML = tipo==='equipamento'
+      ? '<p class="hint">Nenhum equipamento cadastrado para esta unidade ainda — o que você digitar no campo Equipamento será salvo como texto livre neste atendimento.</p>'
+      : '<p class="hint">Nenhum resultado — o que você digitar será salvo como cadastro novo.</p>';
     painel.style.display = 'block';
     return;
   }
@@ -1573,10 +1579,26 @@ function normalizarTexto(s){
 // digita (mais rápido e sem o problema de acentos do ILIKE do banco).
 let equipamentosDoClienteCache = [];
 async function mostrarEquipamentosDoCliente(clienteId, nomeCliente){
-  const { data } = await sb.from('equipamentos')
+  const painel = $('#novo-busca-painel');
+  const wrap = $('#novo-busca-resultados');
+  $('#novo-busca-titulo').textContent = `Equipamentos de ${nomeCliente || 'unidade selecionada'}`;
+  wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Buscando equipamentos desta unidade…</div>';
+  painel.style.display = 'block';
+
+  const { data, error } = await sb.from('equipamentos')
     .select('*, clientes(id, nome, cliente_grupo, telefone)')
     .eq('cliente_id', clienteId).eq('ativo', true).order('nome').limit(200);
+
+  if(error){
+    console.error('[equipamentos-por-cliente]', error);
+    wrap.innerHTML = '<p class="hint">Erro ao buscar equipamentos: '+error.message+'</p>';
+    return;
+  }
+
   equipamentosDoClienteCache = data || [];
+  if(!equipamentosDoClienteCache.length){
+    console.warn('[equipamentos-por-cliente] nenhum equipamento com cliente_id =', clienteId);
+  }
   renderResultadosBuscaNovo('equipamento', equipamentosDoClienteCache, `Equipamentos de ${nomeCliente || 'unidade selecionada'}`);
 }
 
@@ -1698,6 +1720,7 @@ function limparFormularioNovoAtendimento(){
   catalogoSelecionado = { cliente_id: null, equipamento_id: null };
   $('#novo-confirmacao').style.display = 'none';
   $('#novo-form-preview').style.display = 'block';
+  ultimoAtendimentoCriadoId = null;
 }
 
 $('#btn-cancelar-novo').addEventListener('click', ()=>{
@@ -1731,7 +1754,7 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
 
   if(error){ toast('Erro ao criar atendimento: '+error.message); return; }
 
-  const mensagem = `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${cliente_grupo? 'Cliente: '+cliente_grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}${procedimento_sugerido? 'Procedimento sugerido: '+procedimento_sugerido+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
+  const mensagem = `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${cliente_nome? 'Unidade: '+cliente_nome+'\n':''}${cliente_grupo? 'Cliente: '+cliente_grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}${procedimento_sugerido? 'Procedimento sugerido: '+procedimento_sugerido+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
 
   await sb.from('interacoes').insert({
     atendimento_id: data.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: mensagem
@@ -1760,11 +1783,19 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
   $('#novo-confirmacao-mensagem').textContent = mensagem;
   const link = $('#novo-confirmacao-link');
   link.href = waLink(cliente_telefone, mensagem);
+  ultimoAtendimentoCriadoId = data.id;
 });
 
 $('#btn-concluir-novo').addEventListener('click', ()=>{
   limparFormularioNovoAtendimento();
   switchView('atendimentos');
+});
+
+$('#btn-continuar-atendimento').addEventListener('click', ()=>{
+  const id = ultimoAtendimentoCriadoId;
+  limparFormularioNovoAtendimento();
+  switchView('atendimentos');
+  if(id) abrirDetalhe(id);
 });
 
 // ---------------- DASHBOARD ----------------
