@@ -257,7 +257,72 @@ roda no servidor (nunca no navegador) e confere que quem está pedindo
 
 ---
 
-## 8) Pontos de atenção e possíveis evoluções
+## 8) Catálogo de Clientes/Equipamentos, busca inteligente e importação
+
+**Contraste no modo escuro**: os campos de formulário (incluindo login e
+senha) agora usam cores de fundo/texto que trocam com o tema — no modo
+escuro o texto digitado fica claro sobre fundo escuro, em vez de
+herdar um fundo claro fixo que deixava o texto ilegível.
+
+**Catálogo de Clientes & Equipamentos** (menu "Clientes & Equipamentos"):
+- Duas tabelas novas: `clientes` (cada linha é uma **Unidade** — o nome
+  operacional que aparece na busca e nas mensagens) e `equipamentos`
+  (vinculados a um cliente/unidade).
+- Cada cliente tem um campo **Cliente** separado (`cliente_grupo`) para
+  a razão social/grupo, já que uma mesma rede pode ter várias unidades
+  — por exemplo, Unidade "Hospital São Lucas — Barra" e Cliente "Rede
+  São Lucas Saúde Ltda".
+- Consulta é liberada a qualquer agente; cadastrar, editar ou
+  ativar/inativar é reservado ao Supervisor (RLS no banco, não só a
+  interface).
+
+**Busca inteligente** (botão "🔍 Buscar cliente/equipamento" no Painel):
+- Abre uma janela com um campo de busca livre (nome do equipamento,
+  categoria ou número de série) e filtros por Cliente/Unidade e por
+  Categoria.
+- Ao clicar em "Usar neste atendimento" num resultado, a aplicação
+  preenche automaticamente o formulário de Novo Atendimento (Unidade,
+  Cliente/grupo, Equipamento e WhatsApp, se cadastrado) e guarda o
+  vínculo (`cliente_id`/`equipamento_id`) — assim o atendimento fica
+  ligado ao cadastro do catálogo, além do texto livre já usado nas
+  mensagens de WhatsApp.
+- O campo Cliente (grupo) passou a aparecer também no detalhe do
+  protocolo, na mensagem inicial de WhatsApp, no resumo de
+  transferência/reenvio e no PDF individual do protocolo.
+
+**Importação de planilha** (dentro da janela de busca, só para
+Supervisor): botão "📥 Importar planilha" aceita um `.xlsx` com as
+colunas `REGIÃO`, `CATEGORIA`, `UNIDADE`, `EQUIPAMENTO`, `SERIAL`,
+`CLIENTE` (a coluna `REGIÃO` é ignorada, por pedido explícito). O
+mapeamento é:
+| Coluna da planilha | Vai para |
+|---|---|
+| `UNIDADE` | `clientes.nome` |
+| `CLIENTE` | `clientes.cliente_grupo` |
+| `EQUIPAMENTO` | `equipamentos.nome` |
+| `CATEGORIA` | `equipamentos.categoria` |
+| `SERIAL` | `equipamentos.numero_serie` |
+
+A importação roda inteiramente no navegador (biblioteca SheetJS já
+carregada para a exportação em Excel) e usa `upsert` — reimportar o
+mesmo arquivo **atualiza** clientes (por nome) e equipamentos (por
+número de série) já existentes, em vez de duplicá-los. Equipamentos
+sem número de série na planilha são sempre inseridos como novos (sem
+esse identificador único não há como deduplicá-los com segurança).
+
+**Botão Cancelar**: a tela de Novo Atendimento agora tem um botão
+"Cancelar" ao lado de "Gerar protocolo", que limpa o formulário e a
+seleção do catálogo, e volta ao Painel sem criar nada.
+
+> **Se você já tinha rodado o schema antes desta versão**: rode o
+> `schema.sql` atualizado de novo — ele cria as tabelas `clientes` e
+> `equipamentos`, adiciona `cliente_grupo`/`cliente_id`/`equipamento_id`
+> aos atendimentos, e as restrições únicas necessárias para a
+> importação funcionar sem duplicar dados em reimportações.
+
+---
+
+## 9) Pontos de atenção e possíveis evoluções
 
 - **RLS por agente + Supervisor**: cada agente comum só vê, cria e
   atualiza os próprios atendimentos (`agente_id = auth.uid()`) —
