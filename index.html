@@ -1173,6 +1173,11 @@ async function importarPlanilhaEquipamentos(file){
     }
 
     // ---- 2) monta a lista de equipamentos ----
+    // Alguns números de série na planilha são só placeholders (ex: "SN",
+    // "PRÓPRIO") repetidos em dezenas de linhas — não identificam o
+    // equipamento de verdade, então são tratados como "sem série" para
+    // não fundir equipamentos diferentes numa única linha na importação.
+    const SERIAL_PLACEHOLDERS = new Set(['SN','S/N','SEM SERIE','SEM SÉRIE','PROPRIO','PRÓPRIO','N/A','NA','-','--','X','0']);
     const listaEquip = [];
     for(const l of linhas){
       const unidade = (l['UNIDADE']||'').toString().trim();
@@ -1181,16 +1186,29 @@ async function importarPlanilhaEquipamentos(file){
       const cliente_id = clienteIdPorNome.get(unidade);
       if(!cliente_id) continue;
       const serialRaw = (l['SERIAL']||'').toString().trim();
+      const serialValido = serialRaw && !SERIAL_PLACEHOLDERS.has(serialRaw.toUpperCase());
       listaEquip.push({
         nome: nomeEquip,
         categoria: (l['CATEGORIA']||'').toString().trim() || null,
         cliente_id,
-        numero_serie: serialRaw || null
+        numero_serie: serialValido ? serialRaw : null
       });
     }
 
     status.textContent = `Gravando ${listaEquip.length} equipamentos…`;
-    const comSerial = listaEquip.filter(e=>e.numero_serie);
+
+    // Deduplicação por número de série: o ON CONFLICT DO UPDATE do
+    // Postgres não aceita a mesma chave duas vezes dentro do MESMO lote
+    // enviado — se a planilha tiver linhas com serial repetido, a
+    // segunda ocorrência "vence" (sobrescreve os dados da primeira).
+    const comSerialMap = new Map();
+    let duplicatasSerial = 0;
+    for(const e of listaEquip){
+      if(!e.numero_serie) continue;
+      if(comSerialMap.has(e.numero_serie)) duplicatasSerial++;
+      comSerialMap.set(e.numero_serie, e); // última ocorrência prevalece
+    }
+    const comSerial = [...comSerialMap.values()];
     const semSerial = listaEquip.filter(e=>!e.numero_serie);
 
     let gravados = 0;
@@ -1199,17 +1217,17 @@ async function importarPlanilhaEquipamentos(file){
       const { error } = await sb.from('equipamentos').upsert(lote, { onConflict: 'numero_serie' });
       if(error){ status.textContent = 'Erro ao gravar equipamentos: '+error.message; return; }
       gravados += lote.length;
-      status.textContent = `Gravando equipamentos… ${gravados}/${listaEquip.length}`;
+      status.textContent = `Gravando equipamentos… ${gravados}/${comSerial.length + semSerial.length}`;
     }
     for(let i=0; i<semSerial.length; i+=300){
       const lote = semSerial.slice(i, i+300);
       const { error } = await sb.from('equipamentos').insert(lote);
       if(error){ status.textContent = 'Erro ao gravar equipamentos sem série: '+error.message; return; }
       gravados += lote.length;
-      status.textContent = `Gravando equipamentos… ${gravados}/${listaEquip.length}`;
+      status.textContent = `Gravando equipamentos… ${gravados}/${comSerial.length + semSerial.length}`;
     }
 
-    status.textContent = `✓ Importação concluída: ${listaClientes.length} clientes/unidades e ${listaEquip.length} equipamentos processados.`;
+    status.textContent = `✓ Importação concluída: ${listaClientes.length} clientes/unidades e ${comSerial.length + semSerial.length} equipamentos processados.` + (duplicatasSerial ? ` (${duplicatasSerial} linha(s) com número de série repetido na planilha — só a última de cada foi mantida.)` : '');
     toast('Planilha importada com sucesso.');
     await renderCatalogo();
     await carregarFiltrosBusca();
