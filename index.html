@@ -446,17 +446,22 @@
 
       <div class="grid-2" id="catalogo-forms" style="display:none;margin-bottom:16px;">
         <div class="card card-pad">
-          <p class="section-title">Novo cliente</p>
+          <p class="section-title" id="titulo-form-cliente">Novo cliente</p>
+          <p class="hint" style="margin:-4px 0 12px;">Digite para filtrar a lista abaixo — clique numa linha para editar.</p>
           <div class="field"><label>Unidade (nome operacional)</label><input id="fc-nome" placeholder="Ex: Hospital São Lucas — Unidade Barra"/></div>
           <div class="field"><label>Cliente (grupo/razão social, opcional)</label><input id="fc-grupo" placeholder="Ex: Rede São Lucas Saúde Ltda"/></div>
           <div class="field"><label>Categoria</label><input id="fc-categoria" placeholder="Ex: Hospital, Clínica, Laboratório"/></div>
           <div class="field"><label>WhatsApp principal (opcional)</label>
             <div class="phone-group"><span class="phone-prefix">+55</span><input id="fc-telefone" inputmode="numeric" placeholder="(21) 98888-7777"/></div>
           </div>
-          <button class="btn btn-primary btn-block" id="btn-criar-cliente">Adicionar cliente</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" style="flex:1;" id="btn-criar-cliente">Adicionar cliente</button>
+            <button class="btn btn-ghost" id="btn-cancelar-edicao-cliente" style="display:none;">Cancelar edição</button>
+          </div>
         </div>
         <div class="card card-pad">
-          <p class="section-title">Novo equipamento</p>
+          <p class="section-title" id="titulo-form-equip">Novo equipamento</p>
+          <p class="hint" style="margin:-4px 0 12px;">Digite para filtrar a lista abaixo — clique numa linha para editar.</p>
           <div class="field"><label>Nome</label><input id="fe-nome" placeholder="Ex: Analisador Bioquímico X200"/></div>
           <div class="field"><label>Categoria</label><input id="fe-categoria" placeholder="Ex: Bioquímica, Hematologia"/></div>
           <div class="field"><label>Cliente onde está instalado</label>
@@ -464,7 +469,10 @@
             <input type="hidden" id="fe-cliente"/>
           </div>
           <div class="field"><label>Número de série (opcional)</label><input id="fe-serie" placeholder="Ex: SN-88213"/></div>
-          <button class="btn btn-primary btn-block" id="btn-criar-equipamento">Adicionar equipamento</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" style="flex:1;" id="btn-criar-equipamento">Adicionar equipamento</button>
+            <button class="btn btn-ghost" id="btn-cancelar-edicao-equip" style="display:none;">Cancelar edição</button>
+          </div>
         </div>
       </div>
 
@@ -953,24 +961,38 @@ async function excluirLinha(linha){
 }
 
 // ---------------- CLIENTES & EQUIPAMENTOS (catálogo) ----------------
+let equipamentosCache = [];
+let clienteEditandoId = null;
+let equipamentoEditandoId = null;
+
 async function renderCatalogo(){
   $('#catalogo-forms').style.display = currentAgente.is_admin ? 'grid' : 'none';
   await Promise.all([renderClientes(), renderEquipamentos()]);
   await popularSelectClientesEquipamento();
 }
 
+function filtrarPorTexto(lista, termo, campos){
+  const t = termo.trim().toLowerCase();
+  if(!t) return lista;
+  return lista.filter(item => campos.some(c => (item[c]||'').toLowerCase().includes(t)));
+}
+
 async function renderClientes(){
-  const wrap = $('#clientes-list-wrap');
   const { data, error } = await sb.from('clientes').select('*').order('nome');
-  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar clientes.</p>'; return; }
+  if(error){ $('#clientes-list-wrap').innerHTML = '<p class="hint">Erro ao carregar clientes.</p>'; return; }
   clientesCache = data || [];
-  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🏥</div>Nenhum cliente cadastrado ainda.</div>`; return; }
+  renderizarTabelaClientes(clientesCache);
+}
+
+function renderizarTabelaClientes(lista){
+  const wrap = $('#clientes-list-wrap');
+  if(!lista.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🏥</div>Nenhum cliente encontrado.</div>`; return; }
 
   wrap.innerHTML = `<div class="table-scroll" style="max-height:420px;overflow-y:auto;"><table><thead><tr>
       <th>Unidade</th><th>Cliente</th><th>Categoria</th><th>Status</th>${currentAgente.is_admin?'<th></th>':''}
     </tr></thead><tbody>
-    ${data.map(c=>`
-      <tr>
+    ${lista.map(c=>`
+      <tr data-row-cliente="${c.id}" style="${currentAgente.is_admin?'cursor:pointer;':''}">
         <td style="font-weight:600;">${escapeHtml(c.nome)}</td>
         <td>${escapeHtml(c.cliente_grupo || '—')}</td>
         <td>${escapeHtml(c.categoria || '—')}</td>
@@ -981,9 +1003,16 @@ async function renderClientes(){
       </tr>`).join('')}
     </tbody></table></div>`;
 
+  if(currentAgente.is_admin){
+    wrap.querySelectorAll('[data-row-cliente]').forEach(tr=>{
+      const c = lista.find(x=>x.id===tr.dataset.rowCliente);
+      tr.addEventListener('click', (e)=>{ if(!e.target.closest('button')) carregarClienteParaEdicao(c); });
+    });
+  }
   wrap.querySelectorAll('[data-toggle-cliente]').forEach(btn=>{
-    const c = data.find(x=>x.id===btn.dataset.toggleCliente);
-    btn.addEventListener('click', async ()=>{
+    const c = lista.find(x=>x.id===btn.dataset.toggleCliente);
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
       const { error } = await sb.from('clientes').update({ ativo: !c.ativo }).eq('id', c.id);
       if(error){ toast('Erro: '+error.message); return; }
       renderClientes();
@@ -991,17 +1020,42 @@ async function renderClientes(){
   });
 }
 
+function carregarClienteParaEdicao(c){
+  clienteEditandoId = c.id;
+  $('#fc-nome').value = c.nome || '';
+  $('#fc-grupo').value = c.cliente_grupo || '';
+  $('#fc-categoria').value = c.categoria || '';
+  $('#fc-telefone').value = c.telefone ? formatarCelularBR(c.telefone.replace(/^55/,'')) : '';
+  $('#btn-criar-cliente').textContent = 'Salvar alterações';
+  $('#btn-cancelar-edicao-cliente').style.display = 'inline-flex';
+  $('#titulo-form-cliente').textContent = 'Editar cliente';
+  $('#fc-nome').scrollIntoView({ behavior:'smooth', block:'center' });
+}
+function cancelarEdicaoCliente(){
+  clienteEditandoId = null;
+  $('#fc-nome').value=''; $('#fc-grupo').value=''; $('#fc-categoria').value=''; $('#fc-telefone').value='';
+  $('#btn-criar-cliente').textContent = 'Adicionar cliente';
+  $('#btn-cancelar-edicao-cliente').style.display = 'none';
+  $('#titulo-form-cliente').textContent = 'Novo cliente';
+  renderizarTabelaClientes(clientesCache);
+}
+
 async function renderEquipamentos(){
+  const { data, error } = await sb.from('equipamentos').select('*, clientes(id, nome)').order('nome').limit(300);
+  if(error){ $('#equipamentos-list-wrap').innerHTML = '<p class="hint">Erro ao carregar equipamentos.</p>'; return; }
+  equipamentosCache = data || [];
+  renderizarTabelaEquipamentos(equipamentosCache);
+}
+
+function renderizarTabelaEquipamentos(lista){
   const wrap = $('#equipamentos-list-wrap');
-  const { data, error } = await sb.from('equipamentos').select('*, clientes(nome)').order('nome').limit(300);
-  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar equipamentos.</p>'; return; }
-  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🩺</div>Nenhum equipamento cadastrado ainda.</div>`; return; }
+  if(!lista.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🩺</div>Nenhum equipamento encontrado.</div>`; return; }
 
   wrap.innerHTML = `<div class="table-scroll" style="max-height:420px;overflow-y:auto;"><table><thead><tr>
       <th>Equipamento</th><th>Categoria</th><th>Unidade</th><th>Série</th><th>Status</th>${currentAgente.is_admin?'<th></th>':''}
     </tr></thead><tbody>
-    ${data.map(e=>`
-      <tr>
+    ${lista.map(e=>`
+      <tr data-row-equip="${e.id}" style="${currentAgente.is_admin?'cursor:pointer;':''}">
         <td style="font-weight:600;">${escapeHtml(e.nome)}</td>
         <td>${escapeHtml(e.categoria || '—')}</td>
         <td>${escapeHtml(e.clientes?.nome || '—')}</td>
@@ -1011,17 +1065,57 @@ async function renderEquipamentos(){
           <button class="btn btn-ghost btn-sm" data-toggle-equip="${e.id}">${e.ativo?'Inativar':'Ativar'}</button>
         </td>` : ''}
       </tr>`).join('')}
-    </tbody></table></div>${data.length>=300?'<p class="hint">Mostrando os 300 primeiros — use a busca inteligente no painel para localizar itens específicos.</p>':''}`;
+    </tbody></table></div>${equipamentosCache.length>=300?'<p class="hint">Mostrando os 300 primeiros — use a busca inteligente no painel para localizar itens específicos.</p>':''}`;
 
+  if(currentAgente.is_admin){
+    wrap.querySelectorAll('[data-row-equip]').forEach(tr=>{
+      const e = lista.find(x=>x.id===tr.dataset.rowEquip);
+      tr.addEventListener('click', (ev)=>{ if(!ev.target.closest('button')) carregarEquipamentoParaEdicao(e); });
+    });
+  }
   wrap.querySelectorAll('[data-toggle-equip]').forEach(btn=>{
-    const e = data.find(x=>x.id===btn.dataset.toggleEquip);
-    btn.addEventListener('click', async ()=>{
+    const e = lista.find(x=>x.id===btn.dataset.toggleEquip);
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
       const { error } = await sb.from('equipamentos').update({ ativo: !e.ativo }).eq('id', e.id);
       if(error){ toast('Erro: '+error.message); return; }
       renderEquipamentos();
     });
   });
 }
+
+function carregarEquipamentoParaEdicao(e){
+  equipamentoEditandoId = e.id;
+  $('#fe-nome').value = e.nome || '';
+  $('#fe-categoria').value = e.categoria || '';
+  $('#fe-serie').value = e.numero_serie || '';
+  $('#fe-cliente-busca').value = e.clientes?.nome || '';
+  $('#fe-cliente').value = e.clientes?.id || '';
+  $('#btn-criar-equipamento').textContent = 'Salvar alterações';
+  $('#btn-cancelar-edicao-equip').style.display = 'inline-flex';
+  $('#titulo-form-equip').textContent = 'Editar equipamento';
+  $('#fe-nome').scrollIntoView({ behavior:'smooth', block:'center' });
+}
+function cancelarEdicaoEquipamento(){
+  equipamentoEditandoId = null;
+  $('#fe-nome').value=''; $('#fe-categoria').value=''; $('#fe-serie').value=''; $('#fe-cliente-busca').value=''; $('#fe-cliente').value='';
+  $('#btn-criar-equipamento').textContent = 'Adicionar equipamento';
+  $('#btn-cancelar-edicao-equip').style.display = 'none';
+  $('#titulo-form-equip').textContent = 'Novo equipamento';
+  renderizarTabelaEquipamentos(equipamentosCache);
+}
+
+// filtro em tempo real das listas, ao digitar nos campos "Unidade" / "Nome"
+$('#fc-nome')?.addEventListener('input', ()=>{
+  renderizarTabelaClientes(filtrarPorTexto(clientesCache, $('#fc-nome').value, ['nome','cliente_grupo']));
+});
+$('#fe-nome')?.addEventListener('input', ()=>{
+  const t = $('#fe-nome').value.trim().toLowerCase();
+  const filtrados = !t ? equipamentosCache : equipamentosCache.filter(e =>
+    (e.nome||'').toLowerCase().includes(t) || (e.categoria||'').toLowerCase().includes(t) || (e.clientes?.nome||'').toLowerCase().includes(t)
+  );
+  renderizarTabelaEquipamentos(filtrados);
+});
 
 // ---------------- AUTOCOMPLETE (caixas de busca inteligente) ----------------
 // Variante "local": filtra um array já carregado em memória (ex: lista
@@ -1115,13 +1209,19 @@ $('#btn-criar-cliente')?.addEventListener('click', async ()=>{
   const categoria = $('#fc-categoria').value.trim();
   const telefone = $('#fc-telefone').value.trim() ? comDDI55($('#fc-telefone').value) : null;
   if(!nome){ toast('Informe o nome da unidade.'); return; }
-  const { error } = await sb.from('clientes').insert({ nome, cliente_grupo: cliente_grupo||null, categoria: categoria||null, telefone });
-  if(error){ toast('Erro ao criar cliente: '+(error.message.includes('duplicate')?'já existe um cliente com esse nome.':error.message)); return; }
-  toast('Cliente cadastrado.');
-  $('#fc-nome').value=''; $('#fc-grupo').value=''; $('#fc-categoria').value=''; $('#fc-telefone').value='';
+
+  const payload = { nome, cliente_grupo: cliente_grupo||null, categoria: categoria||null, telefone };
+  const { error } = clienteEditandoId
+    ? await sb.from('clientes').update(payload).eq('id', clienteEditandoId)
+    : await sb.from('clientes').insert(payload);
+
+  if(error){ toast('Erro ao salvar cliente: '+(error.message.includes('duplicate')?'já existe um cliente com esse nome.':error.message)); return; }
+  toast(clienteEditandoId ? 'Cliente atualizado.' : 'Cliente cadastrado.');
+  cancelarEdicaoCliente();
   await renderClientes();
   await popularSelectClientesEquipamento();
 });
+$('#btn-cancelar-edicao-cliente')?.addEventListener('click', cancelarEdicaoCliente);
 
 $('#btn-criar-equipamento')?.addEventListener('click', async ()=>{
   const nome = $('#fe-nome').value.trim();
@@ -1130,12 +1230,18 @@ $('#btn-criar-equipamento')?.addEventListener('click', async ()=>{
   const numero_serie = $('#fe-serie').value.trim() || null;
   if(!nome){ toast('Informe o nome do equipamento.'); return; }
   if($('#fe-cliente-busca').value.trim() && !cliente_id){ toast('Selecione o cliente na lista sugerida (clique numa opção da busca).'); return; }
-  const { error } = await sb.from('equipamentos').insert({ nome, categoria: categoria||null, cliente_id, numero_serie });
-  if(error){ toast('Erro ao criar equipamento: '+(error.message.includes('duplicate')?'já existe um equipamento com esse número de série.':error.message)); return; }
-  toast('Equipamento cadastrado.');
-  $('#fe-nome').value=''; $('#fe-categoria').value=''; $('#fe-serie').value=''; $('#fe-cliente-busca').value=''; $('#fe-cliente').value='';
+
+  const payload = { nome, categoria: categoria||null, cliente_id, numero_serie };
+  const { error } = equipamentoEditandoId
+    ? await sb.from('equipamentos').update(payload).eq('id', equipamentoEditandoId)
+    : await sb.from('equipamentos').insert(payload);
+
+  if(error){ toast('Erro ao salvar equipamento: '+(error.message.includes('duplicate')?'já existe um equipamento com esse número de série.':error.message)); return; }
+  toast(equipamentoEditandoId ? 'Equipamento atualizado.' : 'Equipamento cadastrado.');
+  cancelarEdicaoEquipamento();
   await renderEquipamentos();
 });
+$('#btn-cancelar-edicao-equip')?.addEventListener('click', cancelarEdicaoEquipamento);
 
 // ---------------- BUSCA INTELIGENTE (modal do painel) ----------------
 async function abrirBuscaCatalogo(){
