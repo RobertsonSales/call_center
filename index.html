@@ -383,7 +383,7 @@
           <div id="novo-form-preview">
             <div id="novo-busca-painel" style="display:none;margin-bottom:16px;">
               <p class="section-title" id="novo-busca-titulo" style="margin-bottom:8px;">Resultados na base</p>
-              <div id="novo-busca-resultados"></div>
+              <div id="novo-busca-resultados" style="border:1px solid var(--border);border-radius:10px;padding:8px;max-height:280px;overflow-y:auto;background:var(--bg);"></div>
             </div>
             <p class="section-title">Prévia da mensagem inicial</p>
             <p class="section-sub">Enviada ao cliente assim que o protocolo é criado.</p>
@@ -1273,7 +1273,7 @@ $('#btn-criar-equipamento')?.addEventListener('click', async ()=>{
     ? await sb.from('equipamentos').update(payload).eq('id', equipamentoEditandoId)
     : await sb.from('equipamentos').insert(payload);
 
-  if(error){ toast('Erro ao salvar equipamento: '+(error.message.includes('duplicate')?'já existe um equipamento com esse número de série.':error.message)); return; }
+  if(error){ toast('Erro ao salvar equipamento: '+(error.message.includes('duplicate')?'já existe um equipamento com esse mesmo nome, série e cliente.':error.message)); return; }
   toast(equipamentoEditandoId ? 'Equipamento atualizado.' : 'Equipamento cadastrado.');
   cancelarEdicaoEquipamento();
   await renderEquipamentos();
@@ -1468,16 +1468,18 @@ async function importarPlanilhaEquipamentos(file){
 
     status.textContent = `Gravando ${listaEquip.length} equipamentos…`;
 
-    // Deduplicação por número de série: o ON CONFLICT DO UPDATE do
-    // Postgres não aceita a mesma chave duas vezes dentro do MESMO lote
-    // enviado — se a planilha tiver linhas com serial repetido, a
-    // segunda ocorrência "vence" (sobrescreve os dados da primeira).
+    // Deduplicação por CLIENTE + NOME + SÉRIE (não só a série): o mesmo
+    // número às vezes é um código de patrimônio que cobre um kit inteiro
+    // (ex: CPU + monitor + analisador com o mesmo código) — tratar isso
+    // como "é o mesmo equipamento" descartava peças de verdade. Só
+    // consideramos duplicata quando cliente, nome E série coincidem.
     const comSerialMap = new Map();
     let duplicatasSerial = 0;
     for(const e of listaEquip){
       if(!e.numero_serie) continue;
-      if(comSerialMap.has(e.numero_serie)) duplicatasSerial++;
-      comSerialMap.set(e.numero_serie, e); // última ocorrência prevalece
+      const chave = `${e.cliente_id}::${e.nome.toLowerCase()}::${e.numero_serie}`;
+      if(comSerialMap.has(chave)) duplicatasSerial++;
+      comSerialMap.set(chave, e); // última ocorrência prevalece
     }
     const comSerial = [...comSerialMap.values()];
     const semSerial = listaEquip.filter(e=>!e.numero_serie);
@@ -1485,7 +1487,7 @@ async function importarPlanilhaEquipamentos(file){
     let gravados = 0;
     for(let i=0; i<comSerial.length; i+=300){
       const lote = comSerial.slice(i, i+300);
-      const { error } = await sb.from('equipamentos').upsert(lote, { onConflict: 'numero_serie' });
+      const { error } = await sb.from('equipamentos').upsert(lote, { onConflict: 'cliente_id,nome,numero_serie' });
       if(error){ status.textContent = 'Erro ao gravar equipamentos: '+error.message; return; }
       gravados += lote.length;
       status.textContent = `Gravando equipamentos… ${gravados}/${comSerial.length + semSerial.length}`;
@@ -1498,7 +1500,7 @@ async function importarPlanilhaEquipamentos(file){
       status.textContent = `Gravando equipamentos… ${gravados}/${comSerial.length + semSerial.length}`;
     }
 
-    status.textContent = `✓ Importação concluída: ${listaClientes.length} clientes/unidades e ${comSerial.length + semSerial.length} equipamentos processados.` + (duplicatasSerial ? ` (${duplicatasSerial} linha(s) com número de série repetido na planilha — só a última de cada foi mantida.)` : '');
+    status.textContent = `✓ Importação concluída: ${listaClientes.length} clientes/unidades e ${comSerial.length + semSerial.length} equipamentos processados.` + (duplicatasSerial ? ` (${duplicatasSerial} linha(s) com cliente+nome+série idênticos na planilha — só a última de cada foi mantida.)` : '');
     toast('Planilha importada com sucesso.');
     await renderCatalogo();
     await carregarFiltrosBusca();
