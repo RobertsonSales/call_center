@@ -1539,8 +1539,8 @@ function renderResultadosBuscaNovo(tipo, itens, tituloExtra){
 
   if(!itens.length){
     wrap.innerHTML = tipo==='equipamento'
-      ? '<p class="hint">Nenhum equipamento cadastrado para esta unidade ainda — o que você digitar no campo Equipamento será salvo como texto livre neste atendimento.</p>'
-      : '<p class="hint">Nenhum resultado — o que você digitar será salvo como cadastro novo.</p>';
+      ? '<p class="hint">Nenhum equipamento encontrado para esta unidade.</p>'
+      : '<p class="hint">Nenhum resultado encontrado.</p>';
     painel.style.display = 'block';
     return;
   }
@@ -1596,9 +1596,33 @@ async function mostrarEquipamentosDoCliente(clienteId, nomeCliente){
   }
 
   equipamentosDoClienteCache = data || [];
-  if(!equipamentosDoClienteCache.length){
-    console.warn('[equipamentos-por-cliente] nenhum equipamento com cliente_id =', clienteId);
+
+  // Nada vinculado pelo id exato deste cliente? Pode existir um cadastro
+  // quase-duplicado da mesma unidade (acento/espaço diferente, comum em
+  // importações de planilha) com os equipamentos vinculados a ELE em vez
+  // deste. Reforça a busca por aproximação do nome como plano B, para
+  // não deixar o agente sem achar nada que realmente existe na base.
+  if(!equipamentosDoClienteCache.length && nomeCliente){
+    console.warn('[equipamentos-por-cliente] nenhum equipamento com cliente_id =', clienteId, '— tentando busca por nome aproximado.');
+    const primeiraPalavra = nomeCliente.trim().split(/\s+/)[0];
+    if(primeiraPalavra && primeiraPalavra.length >= 3){
+      const { data: aproximados } = await sb.from('equipamentos')
+        .select('*, clientes!inner(id, nome, cliente_grupo, telefone)')
+        .eq('ativo', true)
+        .ilike('clientes.nome', `%${primeiraPalavra}%`)
+        .limit(50);
+      const alvo = normalizarTexto(nomeCliente);
+      const proximos = (aproximados || []).filter(e =>
+        e.clientes?.id !== clienteId && normalizarTexto(e.clientes?.nome || '').includes(normalizarTexto(primeiraPalavra))
+      );
+      if(proximos.length){
+        equipamentosDoClienteCache = proximos;
+        renderResultadosBuscaNovo('equipamento', proximos, `Equipamentos de um cadastro parecido com "${nomeCliente}" — confira se é a mesma unidade`);
+        return;
+      }
+    }
   }
+
   renderResultadosBuscaNovo('equipamento', equipamentosDoClienteCache, `Equipamentos de ${nomeCliente || 'unidade selecionada'}`);
 }
 
