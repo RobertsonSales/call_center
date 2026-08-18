@@ -364,12 +364,12 @@
           <div class="field"><label>Linha que recebeu o chamado</label>
             <select id="f-linha"></select>
           </div>
-          <div class="field"><label>Unidade do cliente</label><input id="f-nome" placeholder="Ex: Clínica Vida Nova"/></div>
+          <div class="field"><label>Unidade do cliente</label><input id="f-nome" placeholder="Digite para buscar na base ou informe um novo…" autocomplete="off"/></div>
           <div class="field"><label>Cliente (grupo/razão social, opcional)</label><input id="f-cliente-grupo" placeholder="Ex: Rede Vida Nova Saúde Ltda"/></div>
           <div class="field"><label>WhatsApp do cliente (celular)</label>
             <div class="phone-group"><span class="phone-prefix">+55</span><input id="f-telefone" inputmode="numeric" placeholder="(21) 98888-7777"/></div>
           </div>
-          <div class="field"><label>Equipamento</label><input id="f-equipamento" placeholder="Ex: Analisador Bioquímico X200"/></div>
+          <div class="field"><label>Equipamento</label><input id="f-equipamento" placeholder="Digite para buscar na base ou informe um novo…" autocomplete="off"/></div>
           <div class="field"><label>Descrição inicial do problema</label><textarea id="f-descricao" rows="3" placeholder="Ex: equipamento não liga após queda de energia"></textarea></div>
           <div class="hint" id="catalogo-selecionado-hint" style="display:none;margin-bottom:10px;"></div>
           <div style="display:flex;gap:8px;">
@@ -378,6 +378,10 @@
           </div>
         </div>
         <div class="card card-pad" id="novo-preview">
+          <div id="novo-busca-painel" style="display:none;margin-bottom:16px;">
+            <p class="section-title" id="novo-busca-titulo" style="margin-bottom:8px;">Resultados na base</p>
+            <div id="novo-busca-resultados"></div>
+          </div>
           <p class="section-title">Prévia da mensagem inicial</p>
           <p class="section-sub">Enviada ao cliente assim que o protocolo é criado.</p>
           <div style="background:var(--bg);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;min-height:150px;" id="preview-text">Preencha o formulário ao lado para ver a prévia…</div>
@@ -1369,7 +1373,9 @@ function selecionarDoCatalogo(equip){
   hint.style.display = 'block';
   hint.textContent = `✓ Selecionado do catálogo: ${equip.nome} — ${equip.clientes?.nome || ''}`;
   fecharBuscaCatalogo();
+  esconderResultadosNovo();
   switchView('novo');
+  $('#preview-text').textContent = montarMensagemInicial();
   toast('Dados do catálogo preenchidos no formulário.');
 }
 
@@ -1496,11 +1502,90 @@ function montarMensagemInicial(){
   $('#'+id).addEventListener('input', ()=>{ $('#preview-text').textContent = montarMensagemInicial(); });
 });
 
+// ---- busca inteligente: Unidade do cliente e Equipamento ----
+// Os resultados aparecem dentro do quadro "Prévia da mensagem inicial"
+// (acima da prévia); clicar num resultado transfere os dados para o
+// formulário. Se nada corresponder, o texto digitado é tratado como um
+// cadastro novo ao gerar o protocolo.
+function esconderResultadosNovo(){
+  $('#novo-busca-painel').style.display = 'none';
+  $('#novo-busca-resultados').innerHTML = '';
+}
+
+function renderResultadosBuscaNovo(tipo, itens){
+  const painel = $('#novo-busca-painel');
+  const wrap = $('#novo-busca-resultados');
+  $('#novo-busca-titulo').textContent = tipo==='cliente' ? 'Clientes encontrados na base' : 'Equipamentos encontrados na base';
+
+  if(!itens.length){
+    wrap.innerHTML = '<p class="hint">Nenhum resultado — o que você digitar será salvo como cadastro novo.</p>';
+    painel.style.display = 'block';
+    return;
+  }
+
+  wrap.innerHTML = itens.map((item,i)=> tipo==='cliente'
+    ? `<div class="autocomplete-item" style="border-radius:8px;" data-idx="${i}">
+         <div style="font-weight:600;">${escapeHtml(item.nome)}</div>
+         ${item.cliente_grupo?`<div style="font-size:11.5px;color:var(--text-muted);">${escapeHtml(item.cliente_grupo)}</div>`:''}
+       </div>`
+    : `<div class="autocomplete-item" style="border-radius:8px;" data-idx="${i}">
+         <div style="font-weight:600;">${escapeHtml(item.nome)} ${item.categoria?`<span class="badge badge-em_andamento">${escapeHtml(item.categoria)}</span>`:''}</div>
+         <div style="font-size:11.5px;color:var(--text-muted);">${escapeHtml(item.clientes?.nome || 'sem unidade vinculada')}</div>
+       </div>`
+  ).join('');
+
+  wrap.querySelectorAll('.autocomplete-item').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const item = itens[+el.dataset.idx];
+      if(tipo==='cliente') selecionarClienteNoNovoForm(item);
+      else selecionarDoCatalogo(item);
+    });
+  });
+  painel.style.display = 'block';
+}
+
+function selecionarClienteNoNovoForm(cliente){
+  catalogoSelecionado.cliente_id = cliente.id;
+  $('#f-nome').value = cliente.nome || '';
+  $('#f-cliente-grupo').value = cliente.cliente_grupo || '';
+  if(cliente.telefone){ $('#f-telefone').value = formatarCelularBR(cliente.telefone.replace(/^55/,'')); }
+  const hint = $('#catalogo-selecionado-hint');
+  hint.style.display = 'block';
+  hint.textContent = `✓ Cliente selecionado do catálogo: ${cliente.nome}`;
+  esconderResultadosNovo();
+  $('#preview-text').textContent = montarMensagemInicial();
+}
+
+let timerBuscaClienteNovo = null;
+$('#f-nome').addEventListener('input', ()=>{
+  clearTimeout(timerBuscaClienteNovo);
+  const q = $('#f-nome').value.trim();
+  if(q.length < 2){ esconderResultadosNovo(); return; }
+  timerBuscaClienteNovo = setTimeout(async ()=>{
+    const { data } = await sb.from('clientes').select('*').eq('ativo', true)
+      .or(`nome.ilike.%${q}%,cliente_grupo.ilike.%${q}%`).limit(8);
+    renderResultadosBuscaNovo('cliente', data || []);
+  }, 280);
+});
+
+let timerBuscaEquipNovo = null;
+$('#f-equipamento').addEventListener('input', ()=>{
+  clearTimeout(timerBuscaEquipNovo);
+  const q = $('#f-equipamento').value.trim();
+  if(q.length < 2){ esconderResultadosNovo(); return; }
+  timerBuscaEquipNovo = setTimeout(async ()=>{
+    const { data } = await sb.from('equipamentos').select('*, clientes(id, nome, cliente_grupo, telefone)').eq('ativo', true)
+      .ilike('nome', `%${q}%`).limit(8);
+    renderResultadosBuscaNovo('equipamento', data || []);
+  }, 280);
+});
+
 function limparFormularioNovoAtendimento(){
   $('#f-nome').value=''; $('#f-cliente-grupo').value=''; $('#f-telefone').value='';
   $('#f-equipamento').value=''; $('#f-descricao').value='';
   $('#preview-text').textContent = 'Preencha o formulário ao lado para ver a prévia…';
   $('#catalogo-selecionado-hint').style.display = 'none';
+  esconderResultadosNovo();
   catalogoSelecionado = { cliente_id: null, equipamento_id: null };
 }
 
