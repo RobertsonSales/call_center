@@ -2445,7 +2445,8 @@ async function abrirDetalhe(id){
     <div class="interacao-item">
       <div class="top"><span class="tipo-tag">${i.tipo.replace('_',' ')}</span><span>${i.agentes?.nome||'—'} · ${fmtData(i.criado_em)}</span></div>
       <p>${escapeHtml(i.conteudo)}</p>
-      ${i.destinatario_telefone ? `<p style="margin-top:6px;font-size:11.5px;color:var(--text-muted);">📱 Destinatário: +${escapeHtml(i.destinatario_telefone)} · ${fmtData(i.criado_em)}</p>` : ''}
+      ${i.destinatario_telefone ? `<p style="margin-top:6px;font-size:11.5px;color:var(--text-muted);">📱 Destinatário: ${i.destinatario_nome ? escapeHtml(i.destinatario_nome)+' — ' : ''}+${escapeHtml(i.destinatario_telefone)}</p>` : ''}
+      ${i.anexo_url ? `<p style="margin-top:4px;font-size:11.5px;"><a href="${i.anexo_url}" target="_blank" rel="noopener" style="color:var(--primary);">📎 ${escapeHtml(i.anexo_nome||'Ver anexo')}</a></p>` : ''}
     </div>
   `).join('') || '<p class="hint">Nenhuma interação registrada ainda.</p>';
 
@@ -2586,28 +2587,88 @@ async function encerrarAtendimento(atendimento){
 }
 
 // ---------------- TRANSFERÊNCIA / REENVIO ----------------
-async function abrirTransferencia(atendimento, interacoes){
-  const numeroDigitado = prompt('WhatsApp do especialista que vai continuar o atendimento (DDD + número, ex: 21998887777):','');
-  if(!numeroDigitado) return;
-  const numero = comDDI55(numeroDigitado);
-  const resumo = montarResumoHistorico(atendimento, interacoes);
-
-  try{
-    await sb.from('atendimentos').update({status:'transferido'}).eq('id', atendimento.id);
-    await sb.from('interacoes').insert({
-      atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'transferencia',
-      conteudo: 'Atendimento transferido para +'+numero, destinatario_telefone: numero
-    });
-  }catch(err){
-    console.error('[transferencia]', err);
-    toast('Erro ao registrar a transferência: '+(err?.message||err));
-    return;
-  }
-
-  mostrarConfirmacaoEnvioModal(atendimento.id, 'Transferência registrada', resumo, numero);
+function abrirTransferencia(atendimento, interacoes){
+  mostrarFormularioEnvio(atendimento, interacoes, 'transferir');
 }
 
-function montarResumoHistorico(atendimento, interacoes){
+// Formulário (dentro do próprio modal) para transferir ou reenviar o
+// histórico: nome + WhatsApp do destinatário, e evidência opcional
+// (foto/PDF) para dar mais contexto a quem vai continuar o caso.
+function mostrarFormularioEnvio(atendimento, interacoes, modo){
+  const ehTransferencia = modo === 'transferir';
+  $('#modal-overlay').classList.add('active');
+  $('#modal-protocolo-label').textContent = ehTransferencia ? 'Transferir atendimento' : 'Reenviar histórico';
+  $('#modal-protocolo').textContent = atendimento.protocolo;
+  $('#modal-body').innerHTML = `
+    <p class="section-sub" style="margin:14px 0 16px;">${ehTransferencia ? 'Informe para quem este atendimento vai ser transferido.' : 'Informe para quem o histórico deste protocolo será reenviado.'}</p>
+    <div class="field"><label>Nome do destinatário</label><input id="dest-nome" placeholder="Ex: Dr. João Pereira"/></div>
+    <div class="field"><label>WhatsApp do destinatário</label>
+      <div class="phone-group"><span class="phone-prefix">+55</span><input id="dest-telefone" inputmode="numeric" placeholder="(21) 98888-7777"/></div>
+    </div>
+    <div class="field">
+      <label>Anexar evidência (opcional)</label>
+      <input type="file" id="dest-arquivo" accept="image/*,.pdf"/>
+      <p class="hint">Foto, PDF etc. — um link para o arquivo é incluído na mensagem enviada.</p>
+    </div>
+    <div id="dest-status" class="hint" style="margin-bottom:10px;"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-primary" style="flex:1;" id="btn-confirmar-envio">${ehTransferencia ? 'Transferir e enviar' : 'Reenviar e enviar'}</button>
+      <button class="btn btn-ghost" id="btn-cancelar-envio">Cancelar</button>
+    </div>
+  `;
+  aplicarMascaraCelular($('#dest-telefone'));
+  $('#btn-cancelar-envio').addEventListener('click', ()=> abrirDetalhe(atendimento.id));
+  $('#btn-confirmar-envio').addEventListener('click', ()=> confirmarEnvio(atendimento, interacoes, modo));
+}
+
+async function confirmarEnvio(atendimento, interacoes, modo){
+  const ehTransferencia = modo === 'transferir';
+  const nome = $('#dest-nome').value.trim();
+  const telefone = comDDI55($('#dest-telefone').value);
+  const arquivo = $('#dest-arquivo').files[0];
+  const status = $('#dest-status');
+
+  if(!telefone){ toast('Informe o WhatsApp do destinatário.'); return; }
+
+  const btn = $('#btn-confirmar-envio');
+  btn.disabled = true;
+
+  let anexoUrl = null, anexoNome = null;
+  try{
+    if(arquivo){
+      status.textContent = 'Enviando anexo…';
+      const caminho = `${atendimento.id}/${Date.now()}_${arquivo.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+      const { error: upErr } = await sb.storage.from('evidencias').upload(caminho, arquivo);
+      if(upErr){ toast('Erro ao enviar anexo: '+upErr.message); btn.disabled=false; status.textContent=''; return; }
+      const { data: pub } = sb.storage.from('evidencias').getPublicUrl(caminho);
+      anexoUrl = pub.publicUrl;
+      anexoNome = arquivo.name;
+    }
+
+    status.textContent = ehTransferencia ? 'Registrando transferência…' : 'Registrando reenvio…';
+    const resumo = montarResumoHistorico(atendimento, interacoes, { destinatarioNome: nome, destinatarioTelefone: telefone, anexoUrl });
+
+    if(ehTransferencia){
+      await sb.from('atendimentos').update({status:'transferido'}).eq('id', atendimento.id);
+    }
+    await sb.from('interacoes').insert({
+      atendimento_id: atendimento.id, agente_id: currentAgente.id,
+      tipo: ehTransferencia ? 'transferencia' : 'reenvio',
+      conteudo: (ehTransferencia ? 'Atendimento transferido para ' : 'Histórico reenviado para ') + (nome ? nome+' — ' : '') + '+'+telefone,
+      destinatario_telefone: telefone, destinatario_nome: nome || null,
+      anexo_url: anexoUrl, anexo_nome: anexoNome
+    });
+
+    mostrarConfirmacaoEnvioModal(atendimento.id, ehTransferencia ? 'Transferência registrada' : 'Histórico pronto para reenvio', resumo, telefone);
+  }catch(err){
+    console.error('[confirmar-envio]', err);
+    toast('Erro ao registrar: '+(err?.message||err));
+    btn.disabled = false;
+    status.textContent = '';
+  }
+}
+
+function montarResumoHistorico(atendimento, interacoes, destino={}){
   let txt = `📋 *TRANSFERÊNCIA DE ATENDIMENTO*\n\n`;
   txt += `*Protocolo:* ${atendimento.protocolo}\n`;
   txt += `*Unidade:* ${atendimento.cliente_nome}\n`;
@@ -2615,6 +2676,9 @@ function montarResumoHistorico(atendimento, interacoes){
   txt += `*WhatsApp do cliente:* +${atendimento.cliente_telefone}\n`;
   txt += `*Equipamento:* ${atendimento.equipamento||'—'}\n`;
   txt += `*Problema inicial:* ${atendimento.descricao_problema||'—'}\n`;
+  if(destino.destinatarioTelefone){
+    txt += `*Encaminhado para:* ${destino.destinatarioNome ? destino.destinatarioNome+' — ' : ''}+${destino.destinatarioTelefone}\n`;
+  }
 
   // Só os procedimentos e observações entram no corpo — a mensagem
   // inicial ('mensagem') já repete os dados acima, e avisos de
@@ -2630,6 +2694,8 @@ function montarResumoHistorico(atendimento, interacoes){
   }else{
     txt += `\nNenhum procedimento registrado até o momento.\n`;
   }
+
+  if(destino.anexoUrl) txt += `\n📎 *Evidência anexada:* ${destino.anexoUrl}\n`;
 
   txt += `\nPor favor, dê continuidade ao atendimento a partir deste ponto.`;
   return txt;
@@ -2658,32 +2724,15 @@ function mostrarConfirmacaoEnvioModal(atendimentoId, titulo, mensagem, numero){
   atualizarListaAtivaEmSegundoPlano();
 }
 
-// reenvio a partir do histórico (mesma lógica de transferência, sem
-// mudar status). OBS: hoje esta função não está ligada a nenhum botão
-// da interface — se quiser um atalho de "reenviar" direto da lista do
-// Histórico, me avise que eu ligo isso a um botão.
+// reenvio a partir do histórico (mesma lógica da transferência, sem
+// mudar status) — usado tanto pelo botão do modal quanto pelo atalho
+// "↻ Reenviar" nas tabelas de Histórico/Supervisão.
 async function reenviarProtocolo(id){
   const [{data:atendimento}, {data:interacoes}] = await Promise.all([
     sb.from('atendimentos').select('*').eq('id', id).single(),
     sb.from('interacoes').select('*').eq('atendimento_id', id).order('criado_em',{ascending:true})
   ]);
-  const numeroDigitado = prompt('Reenviar o histórico deste protocolo para qual WhatsApp? (DDD + número)','');
-  if(!numeroDigitado) return;
-  const numero = comDDI55(numeroDigitado);
-  const resumo = montarResumoHistorico(atendimento, interacoes||[]);
-
-  try{
-    await sb.from('interacoes').insert({
-      atendimento_id: id, agente_id: currentAgente.id, tipo:'reenvio',
-      conteudo: 'Histórico reenviado para +'+numero, destinatario_telefone: numero
-    });
-  }catch(err){
-    console.error('[reenvio]', err);
-    toast('Erro ao registrar o reenvio: '+(err?.message||err));
-    return;
-  }
-
-  mostrarConfirmacaoEnvioModal(id, 'Histórico pronto para reenvio', resumo, numero);
+  mostrarFormularioEnvio(atendimento, interacoes||[], 'reenviar');
 }
 
 // ---------------- MODAL controls ----------------
