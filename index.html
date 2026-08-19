@@ -2135,7 +2135,6 @@ async function renderAgentes(){
           <button class="btn btn-ghost btn-sm" data-edit-nome="${a.id}">Editar nome</button>
           <button class="btn btn-ghost btn-sm" data-toggle-admin="${a.id}">${a.is_admin?'Remover supervisor':'Tornar supervisor'}</button>
           <button class="btn btn-ghost btn-sm" data-toggle-ativo="${a.id}">${a.ativo?'Inativar':'Ativar'}</button>
-          <button class="btn btn-danger-ghost btn-sm" data-del-agente="${a.id}">Excluir</button>
         </td>
       </tr>`).join('')}
     </tbody></table></div>`;
@@ -2152,10 +2151,6 @@ async function renderAgentes(){
     const ag = data.find(x=>x.id===btn.dataset.toggleAtivo);
     btn.addEventListener('click', ()=> alternarAtivoAgente(ag));
   });
-  wrap.querySelectorAll('[data-del-agente]').forEach(btn=>{
-    const ag = data.find(x=>x.id===btn.dataset.delAgente);
-    btn.addEventListener('click', ()=> excluirAgente(ag));
-  });
 }
 
 async function editarNomeAgente(agente){
@@ -2167,9 +2162,12 @@ async function editarNomeAgente(agente){
   renderAgentes();
 }
 
-// chamada autenticada à função serverless /api/agentes (criar/excluir
-// conta) — sempre manda o token da sessão atual, que o servidor
-// confere contra a service_role key antes de fazer qualquer alteração.
+// chamada autenticada à função serverless /api/agentes (criar conta) —
+// sempre manda o token da sessão atual, que o servidor confere contra
+// a service_role key antes de fazer qualquer alteração. A exclusão de
+// agentes foi deliberadamente removida: só "Inativar" está disponível,
+// para preservar o histórico de atendimentos vinculado a cada agente
+// (fins de auditoria).
 async function chamarApiAgentes(method, body){
   const { data: { session } } = await sb.auth.getSession();
   const resp = await fetch('/api/agentes', {
@@ -2183,17 +2181,6 @@ async function chamarApiAgentes(method, body){
   const json = await resp.json().catch(()=>({}));
   if(!resp.ok){ throw new Error(json.error || 'Falha na requisição.'); }
   return json;
-}
-
-async function excluirAgente(agente){
-  if(!confirm(`Excluir definitivamente o agente "${agente.nome}"? Isso só é possível se ele nunca atendeu nenhum protocolo.`)) return;
-  try{
-    await chamarApiAgentes('DELETE', { id: agente.id });
-    toast('Agente excluído.');
-    renderAgentes();
-  }catch(e){
-    toast(e.message);
-  }
 }
 
 $('#btn-criar-agente')?.addEventListener('click', async ()=>{
@@ -2218,12 +2205,42 @@ $('#btn-criar-agente')?.addEventListener('click', async ()=>{
 });
 
 async function alternarAdminAgente(agente){
-  if(agente.id === currentAgente.id){ toast('Você não pode alterar seu próprio papel de supervisor.'); return; }
-  const acao = agente.is_admin ? 'remover o papel de Supervisor de' : 'tornar Supervisor';
-  if(!confirm(`Confirma ${acao} ${agente.nome}?`)) return;
+  const souEuMesmo = agente.id === currentAgente.id;
+
+  if(souEuMesmo){
+    if(!agente.is_admin){ toast('Ação não permitida.'); return; }
+    // Só deixa remover o PRÓPRIO papel de supervisor se existir pelo
+    // menos outro supervisor ativo — sem isso, ninguém mais conseguiria
+    // gerenciar agentes/linhas depois. O banco também garante essa
+    // regra (trigger de segurança), mas checamos antes para dar uma
+    // mensagem clara em vez de um erro cru do Postgres.
+    const { count, error: contErr } = await sb.from('agentes')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_admin', true).eq('ativo', true).neq('id', currentAgente.id);
+    if(contErr){ toast('Erro ao verificar outros supervisores: '+contErr.message); return; }
+    if(!count){
+      toast('Você é o único supervisor ativo — promova outro agente antes de remover seu próprio acesso.');
+      return;
+    }
+    if(!confirm('Tem certeza que deseja remover o SEU PRÓPRIO papel de supervisor? Você perderá acesso a este menu imediatamente.')) return;
+  }else{
+    const acao = agente.is_admin ? 'remover o papel de Supervisor de' : 'tornar Supervisor';
+    if(!confirm(`Confirma ${acao} ${agente.nome}?`)) return;
+  }
+
   const { error } = await sb.from('agentes').update({ is_admin: !agente.is_admin }).eq('id', agente.id);
   if(error){ toast('Erro: '+error.message); return; }
   toast('Papel atualizado.');
+
+  if(souEuMesmo){
+    currentAgente.is_admin = false;
+    $('#nav-group-supervisor').style.display = 'none';
+    $('#nav-supervisao').style.display = 'none';
+    $('#nav-agentes').style.display = 'none';
+    $('#agent-role-badge').textContent = '';
+    switchView('dashboard');
+    return;
+  }
   renderAgentes();
 }
 
