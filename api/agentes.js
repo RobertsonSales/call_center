@@ -1,15 +1,22 @@
-// /api/agentes.js — função serverless do Vercel para o CRUD completo
-// de agentes (criar e excluir contas de autenticação).
+// /api/agentes.js — função serverless do Vercel para criação de
+// contas de agente (login/senha).
 //
 // Por que isso precisa ser uma função de servidor e não uma chamada
-// direta do navegador: criar/excluir um USUÁRIO DE AUTENTICAÇÃO (não
-// uma linha de tabela comum) exige a "service_role key" do Supabase —
+// direta do navegador: criar um USUÁRIO DE AUTENTICAÇÃO (não uma
+// linha de tabela comum) exige a "service_role key" do Supabase —
 // uma chave com poderes administrativos totais, que ignora RLS. Ela
 // NUNCA pode ser enviada ao navegador (equivale a dar a senha mestra
 // do banco). Por isso ela mora só aqui, lida de uma variável de
 // ambiente do servidor, e esta função checa, a cada chamada, se quem
 // está pedindo (via token do próprio login) é realmente um supervisor
 // antes de fazer qualquer alteração.
+//
+// IMPORTANTE: esta função NUNCA exclui agentes — só cria. A exclusão
+// foi deliberadamente removida de toda a aplicação (front-end e
+// back-end) para preservar o histórico de atendimentos vinculado a
+// cada agente, para fins de auditoria. A única forma de desativar um
+// acesso é "Inativar" (agentes.ativo = false), que mantém tudo
+// intacto e reversível.
 //
 // Variáveis de ambiente necessárias (Vercel → Environment Variables):
 //   SUPABASE_URL               (já existente)
@@ -83,27 +90,7 @@ export default async function handler(req, res){
     return;
   }
 
-  // ---------------- EXCLUIR AGENTE ----------------
-  if(req.method === 'DELETE'){
-    const { id } = req.body || {};
-    if(!id){ res.status(400).json({ error: 'Informe o id do agente.' }); return; }
-    if(id === solicitante.id){
-      res.status(400).json({ error: 'Você não pode excluir a própria conta.' });
-      return;
-    }
-
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
-    if(error){
-      const msg = /foreign key|violat/i.test(error.message)
-        ? 'Este agente já possui atendimentos registrados e não pode ser excluído — use "Inativar" para preservar o histórico e a auditoria.'
-        : 'Não foi possível excluir: ' + error.message;
-      res.status(400).json({ error: msg });
-      return;
-    }
-
-    res.status(200).json({ ok: true });
-    return;
-  }
-
-  res.status(405).json({ error: 'Método não suportado.' });
+  // Exclusão de agentes é permanentemente indisponível nesta rota —
+  // inclusive para chamadas diretas à API, não só pela interface.
+  res.status(405).json({ error: 'Método não suportado. A exclusão de agentes foi desativada — use "Inativar" para preservar o histórico de auditoria.' });
 }
