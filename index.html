@@ -116,6 +116,14 @@
   .btn-sm{padding:7px 12px;font-size:12.5px;}
   .btn:disabled{opacity:.55;cursor:not-allowed;}
   .error-msg{background:var(--danger-light);color:var(--danger);font-size:13px;padding:9px 12px;border-radius:var(--radius-sm);margin-bottom:14px;display:none;}
+  .info-msg{background:var(--info-light);color:var(--info);font-size:13px;padding:9px 12px;border-radius:var(--radius-sm);margin-bottom:14px;}
+  .password-group{position:relative;}
+  .password-group input{padding-right:42px;}
+  .password-toggle{
+    position:absolute;top:0;right:0;height:100%;width:40px;background:transparent;border:none;
+    font-size:15px;color:var(--text-muted);display:flex;align-items:center;justify-content:center;
+  }
+  .password-toggle:hover{color:var(--text);}
   .hint{font-size:11.5px;color:var(--text-muted);margin-top:6px;}
 
   .phone-group{display:flex;align-items:stretch;gap:0;}
@@ -288,15 +296,37 @@
 
 <!-- ================= LOGIN ================= -->
 <div id="login-view">
-  <div class="login-card">
+  <div class="login-card" id="login-card-normal">
     <div class="login-brand"><span class="dot"></span><span>GRUPO LABMEDIC</span></div>
     <p class="sub" style="font-weight:600;color:var(--text);margin-bottom:2px;">Sistema de Atendimento Técnico Interno</p>
     <p class="sub">Suporte técnico via WhatsApp — acesso restrito a agentes.</p>
     <div class="error-msg" id="login-error"></div>
+    <div class="info-msg" id="login-info" style="display:none;"></div>
     <div class="field"><label>E-mail</label><input type="email" id="login-email" placeholder="agente@empresa.com" autocomplete="username"/></div>
-    <div class="field"><label>Senha</label><input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password"/></div>
+    <div class="field">
+      <label>Senha</label>
+      <div class="password-group">
+        <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password"/>
+        <button type="button" class="password-toggle" id="btn-toggle-senha" title="Mostrar/ocultar senha" aria-label="Mostrar ou ocultar senha">👁</button>
+      </div>
+    </div>
     <button class="btn btn-primary btn-block" id="btn-login" disabled>Carregando…</button>
+    <p class="hint" style="text-align:center;margin-top:10px;"><a href="#" id="link-esqueci-senha" style="color:var(--primary);text-decoration:none;font-weight:600;">Esqueci minha senha</a></p>
     <p class="hint">Os acessos são criados pelo administrador no painel do Supabase (Authentication → Users) ou pelo menu Agentes.</p>
+  </div>
+
+  <div class="login-card" id="login-card-nova-senha" style="display:none;">
+    <div class="login-brand"><span class="dot"></span><span>GRUPO LABMEDIC</span></div>
+    <p class="sub" style="font-weight:600;color:var(--text);margin-bottom:14px;">Defina sua nova senha</p>
+    <div class="error-msg" id="nova-senha-error"></div>
+    <div class="field">
+      <label>Nova senha</label>
+      <div class="password-group">
+        <input type="password" id="nova-senha-input" placeholder="mínimo 6 caracteres" autocomplete="new-password"/>
+        <button type="button" class="password-toggle" id="btn-toggle-nova-senha" title="Mostrar/ocultar senha" aria-label="Mostrar ou ocultar senha">👁</button>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-block" id="btn-salvar-nova-senha">Salvar nova senha e entrar</button>
   </div>
 </div>
 
@@ -664,11 +694,31 @@ async function iniciarSupabase(){
     sb = createClient(cfg.url, cfg.anonKey, {
       auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
     });
+
+    // Quando o agente clica no link de "esqueci minha senha" recebido
+    // por e-mail, o Supabase abre esta mesma URL com um token de
+    // recuperação — e dispara este evento assim que o client processa
+    // esse token. Nesse momento, trocamos a tela de login pela de
+    // definir nova senha, em vez de deixar entrar direto no app com
+    // essa sessão temporária de recuperação.
+    let emFluxoRecuperacaoSenha = window.location.hash.includes('type=recovery');
+    if(emFluxoRecuperacaoSenha){
+      $('#login-card-normal').style.display = 'none';
+      $('#login-card-nova-senha').style.display = 'block';
+    }
+    sb.auth.onAuthStateChange((event)=>{
+      if(event === 'PASSWORD_RECOVERY'){
+        emFluxoRecuperacaoSenha = true;
+        $('#login-card-normal').style.display = 'none';
+        $('#login-card-nova-senha').style.display = 'block';
+      }
+    });
+
     $('#btn-login').disabled = false;
     $('#btn-login').textContent = 'Entrar';
-    // sessão já existente? entra direto.
+    // sessão já existente (e não é uma recuperação em andamento)? entra direto.
     const { data } = await sb.auth.getSession();
-    if(data.session) afterLogin(data.session);
+    if(data.session && !emFluxoRecuperacaoSenha) afterLogin(data.session);
   }catch(err){
     errBox.textContent = 'Não foi possível carregar a configuração do servidor. Verifique as variáveis de ambiente SUPABASE_URL e SUPABASE_ANON_KEY no Vercel.';
     errBox.style.display = 'block';
@@ -725,6 +775,13 @@ function waLink(numero, texto){
   return `https://wa.me/${soDigitos(numero)}?text=${encodeURIComponent(texto)}`;
 }
 
+// Nome fixo de "janela" usado em todo envio ao WhatsApp: passar sempre
+// o mesmo nome para window.open()/target faz o navegador reaproveitar
+// a mesma aba já aberta do WhatsApp Web (só navegando para o novo
+// link), em vez de abrir uma aba nova a cada clique — e assim também
+// não força o agente a reconectar o WhatsApp Web de novo.
+const WA_TAB = 'labmedic_whatsapp';
+
 function fmtData(iso){
   const d = new Date(iso);
   return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
@@ -776,6 +833,79 @@ function mensagemErroLogin(error){
   // fallback: mostra a mensagem original do Supabase para diagnóstico
   return 'Falha no login: ' + (error?.message || 'erro desconhecido') + '.';
 }
+
+// ---------------- MOSTRAR/OCULTAR SENHA ----------------
+function alternarVisibilidadeSenha(inputId, btnId){
+  const input = $('#'+inputId);
+  const btn = $('#'+btnId);
+  btn.addEventListener('click', ()=>{
+    const oculta = input.type === 'password';
+    input.type = oculta ? 'text' : 'password';
+    btn.textContent = oculta ? '🙈' : '👁';
+  });
+}
+alternarVisibilidadeSenha('login-password', 'btn-toggle-senha');
+alternarVisibilidadeSenha('nova-senha-input', 'btn-toggle-nova-senha');
+
+// ---------------- ESQUECI MINHA SENHA ----------------
+$('#link-esqueci-senha').addEventListener('click', async (e)=>{
+  e.preventDefault();
+  const errBox = $('#login-error');
+  const infoBox = $('#login-info');
+  errBox.style.display = 'none';
+
+  const email = ($('#login-email').value || '').trim() || prompt('Informe o e-mail cadastrado para receber o link de redefinição:', '');
+  if(!email) return;
+
+  const link = $('#link-esqueci-senha');
+  const textoOriginal = link.textContent;
+  link.textContent = 'Enviando…';
+  try{
+    const { error } = await sb.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    if(error){ errBox.textContent = 'Não foi possível enviar: '+error.message; errBox.style.display='block'; return; }
+    infoBox.textContent = 'Se este e-mail estiver cadastrado, enviamos um link para redefinir a senha. Confira também a caixa de spam.';
+    infoBox.style.display = 'block';
+  }catch(err){
+    console.error('[esqueci-senha]', err);
+    errBox.textContent = 'Erro inesperado ao solicitar redefinição.';
+    errBox.style.display = 'block';
+  }finally{
+    link.textContent = textoOriginal;
+  }
+});
+
+$('#btn-salvar-nova-senha').addEventListener('click', async ()=>{
+  const errBox = $('#nova-senha-error');
+  errBox.style.display = 'none';
+  const novaSenha = $('#nova-senha-input').value;
+  if(!novaSenha || novaSenha.length < 6){
+    errBox.textContent = 'A senha precisa ter ao menos 6 caracteres.';
+    errBox.style.display = 'block';
+    return;
+  }
+
+  const btn = $('#btn-salvar-nova-senha');
+  btn.disabled = true; btn.textContent = 'Salvando…';
+  try{
+    const { data, error } = await sb.auth.updateUser({ password: novaSenha });
+    if(error){
+      errBox.textContent = 'Não foi possível salvar: '+error.message;
+      errBox.style.display = 'block';
+      return;
+    }
+    history.replaceState(null, '', window.location.pathname); // limpa o token da URL
+    toast('Senha atualizada com sucesso!');
+    if(data.session) afterLogin(data.session);
+  }catch(err){
+    console.error('[nova-senha]', err);
+    errBox.textContent = 'Erro inesperado ao salvar a nova senha.';
+    errBox.style.display = 'block';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Salvar nova senha e entrar';
+  }
+});
 
 $('#btn-logout').addEventListener('click', async (e)=>{
   e.preventDefault();
@@ -1817,7 +1947,7 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
     // tentativa automática (pode ser bloqueada por bloqueador de pop-up,
     // já que ocorre depois de chamadas assíncronas) — por isso o link
     // clicável abaixo é o caminho garantido, não só um extra.
-    window.open(waLink(cliente_telefone, mensagem), '_blank');
+    window.open(waLink(cliente_telefone, mensagem), WA_TAB);
 
     $('#novo-form-preview').style.display = 'none';
     $('#novo-confirmacao').style.display = 'block';
@@ -1825,6 +1955,7 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
     $('#novo-confirmacao-mensagem').textContent = mensagem;
     const link = $('#novo-confirmacao-link');
     link.href = waLink(cliente_telefone, mensagem);
+    link.target = WA_TAB;
     ultimoAtendimentoCriadoId = data.id;
 
   }catch(err){
@@ -2354,7 +2485,7 @@ async function abrirDetalhe(id){
     </div>` : ''}
 
     <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
-      <a class="btn btn-whatsapp btn-sm" target="_blank" href="${waLink(atendimento.cliente_telefone,'Olá '+atendimento.cliente_nome+', tudo bem? Sobre o protocolo '+atendimento.protocolo+': ')}">Abrir WhatsApp do cliente</a>
+      <a class="btn btn-whatsapp btn-sm" target="${WA_TAB}" href="${waLink(atendimento.cliente_telefone,'Olá '+atendimento.cliente_nome+', tudo bem? Sobre o protocolo '+atendimento.protocolo+': ')}">Abrir WhatsApp do cliente</a>
       ${atendimento.status!=='encerrado' ? `<button class="btn btn-ghost btn-sm" id="btn-encerrar">Encerrar atendimento</button>`:''}
       <button class="btn btn-ghost btn-sm" id="btn-transferir">Transferir / reenviar histórico</button>
       <button class="btn btn-ghost btn-sm" id="btn-visualizar-pdf-protocolo">👁 Visualizar PDF</button>
@@ -2426,7 +2557,7 @@ async function salvarInteracao(atendimento, enviarWhatsapp){
   }
 
   if(enviarWhatsapp){
-    window.open(waLink(atendimento.cliente_telefone, texto), '_blank');
+    window.open(waLink(atendimento.cliente_telefone, texto), WA_TAB);
   }
   toast('Procedimento registrado.');
   abrirDetalhe(atendimento.id);
@@ -2477,11 +2608,30 @@ async function abrirTransferencia(atendimento, interacoes){
 }
 
 function montarResumoHistorico(atendimento, interacoes){
-  let txt = `📋 TRANSFERÊNCIA DE ATENDIMENTO\nProtocolo: ${atendimento.protocolo}\nUnidade: ${atendimento.cliente_nome}\n${atendimento.cliente_grupo ? 'Cliente: '+atendimento.cliente_grupo+'\n' : ''}WhatsApp do cliente: +${atendimento.cliente_telefone}\nEquipamento: ${atendimento.equipamento||'—'}\nProblema inicial: ${atendimento.descricao_problema||'—'}\n\n— Histórico de procedimentos —\n`;
-  interacoes.forEach(i=>{
-    txt += `\n[${fmtData(i.criado_em)}] (${i.tipo}) ${i.conteudo}`;
-  });
-  txt += `\n\nPor favor, dê continuidade ao atendimento a partir deste ponto.`;
+  let txt = `📋 *TRANSFERÊNCIA DE ATENDIMENTO*\n\n`;
+  txt += `*Protocolo:* ${atendimento.protocolo}\n`;
+  txt += `*Unidade:* ${atendimento.cliente_nome}\n`;
+  if(atendimento.cliente_grupo) txt += `*Cliente:* ${atendimento.cliente_grupo}\n`;
+  txt += `*WhatsApp do cliente:* +${atendimento.cliente_telefone}\n`;
+  txt += `*Equipamento:* ${atendimento.equipamento||'—'}\n`;
+  txt += `*Problema inicial:* ${atendimento.descricao_problema||'—'}\n`;
+
+  // Só os procedimentos e observações entram no corpo — a mensagem
+  // inicial ('mensagem') já repete os dados acima, e avisos de
+  // transferências/reenvios anteriores não ajudam quem vai continuar
+  // o atendimento agora, então ficam de fora para não poluir.
+  const relevantes = (interacoes||[]).filter(i => i.tipo === 'procedimento' || i.tipo === 'nota_interna');
+  txt += `\n*Procedimentos e observações registrados:*\n`;
+  if(relevantes.length){
+    relevantes.forEach(i=>{
+      const rotulo = i.tipo === 'procedimento' ? '🔧 Procedimento' : '💬 Observação';
+      txt += `\n${rotulo} _(${fmtData(i.criado_em)})_:\n${i.conteudo}\n`;
+    });
+  }else{
+    txt += `\nNenhum procedimento registrado até o momento.\n`;
+  }
+
+  txt += `\nPor favor, dê continuidade ao atendimento a partir deste ponto.`;
   return txt;
 }
 
@@ -2490,7 +2640,7 @@ function montarResumoHistorico(atendimento, interacoes){
 // window.open() automático depois de chamadas assíncronas — nesse
 // ponto do fluxo, o navegador frequentemente bloqueia como pop-up.
 function mostrarConfirmacaoEnvioModal(atendimentoId, titulo, mensagem, numero){
-  window.open(waLink(numero, mensagem), '_blank'); // tentativa automática (best-effort)
+  window.open(waLink(numero, mensagem), WA_TAB); // tentativa automática (best-effort)
   $('#modal-overlay').classList.add('active'); // garante que o modal esteja visível, mesmo vindo de um atalho fora do detalhe
   $('#modal-protocolo-label').textContent = titulo;
   $('#modal-protocolo').textContent = '+'+numero;
@@ -2500,7 +2650,7 @@ function mostrarConfirmacaoEnvioModal(atendimentoId, titulo, mensagem, numero){
     </div>
     <p class="section-title">Mensagem</p>
     <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;max-height:320px;overflow-y:auto;">${escapeHtml(mensagem)}</div>
-    <a class="btn btn-whatsapp btn-block" href="${waLink(numero, mensagem)}" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
+    <a class="btn btn-whatsapp btn-block" href="${waLink(numero, mensagem)}" target="${WA_TAB}" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
     <button class="btn btn-ghost btn-block" id="btn-voltar-detalhe-modal">Voltar ao protocolo</button>
   `;
   $('#btn-voltar-detalhe-modal').addEventListener('click', ()=> abrirDetalhe(atendimentoId));
