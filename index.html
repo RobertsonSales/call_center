@@ -74,6 +74,48 @@
   a{color:inherit;}
   ::selection{background:var(--primary-light);}
 
+  /* ---------- SPLASH / TELA DE ABERTURA ---------- */
+  #splash-view{position:relative;min-height:100vh;display:flex;flex-direction:column;background:#070D15;color:#EAF1F7;overflow:hidden;}
+  .splash-bg{position:absolute;inset:0;background:url('https://sspark.genspark.ai/cfimages?u1=RrclknxyTIYO4VKl6y7JAX%2FX%2FxAQNfXL2nyEN6zu48L31E%2F6rSk7olujrCO5n9uV4F02iIjFNJmPBG8p2nUrFqsuqbOIxfErM%2BieQyNj4X7rPoB%2FPS2tL5HxPtQQo6%2FeqFgag7bmpyBTpdh8JbA00pChk6%2F8&u2=Z4fNZEvWY90twf8v&width=2560') center 30%/cover no-repeat;opacity:.5;}
+  .splash-overlay{position:absolute;inset:0;background:linear-gradient(100deg,rgba(7,13,21,.95) 0%,rgba(11,20,32,.86) 42%,rgba(11,81,72,.55) 78%,rgba(15,110,99,.42) 100%);}
+  .splash-topbar{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:16px;max-width:1240px;width:100%;margin:0 auto;padding:26px 32px 0;}
+  .splash-brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:17px;letter-spacing:.02em;font-family:'Sora',system-ui,sans-serif;}
+  .splash-brand .dot{width:10px;height:10px;border-radius:50%;background:var(--whatsapp);box-shadow:0 0 0 4px rgba(37,211,102,.18);}
+  .splash-topbar-tag{font-size:12px;color:#9FB2C6;letter-spacing:.06em;text-transform:uppercase;font-weight:600;}
+  .splash-content{position:relative;z-index:2;flex:1;display:flex;align-items:center;gap:56px;max-width:1240px;width:100%;margin:0 auto;padding:36px 32px;}
+  .splash-left{flex:1.15;min-width:0;}
+  .splash-eyebrow{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#7FD9CC;background:rgba(15,110,99,.28);border:1px solid rgba(127,217,204,.35);padding:6px 12px;border-radius:999px;margin-bottom:18px;}
+  .splash-left h1{font-size:clamp(30px,4vw,46px);line-height:1.12;margin:0 0 16px;letter-spacing:-.02em;color:#FFFFFF;}
+  .splash-left h1 em{font-style:normal;color:#7FD9CC;}
+  .splash-sub{font-size:15.5px;line-height:1.65;color:#B9C7D6;margin:0 0 26px;max-width:560px;}
+  .splash-insights{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:30px;max-width:640px;}
+  .insight-card{display:flex;gap:12px;align-items:flex-start;background:rgba(16,29,46,.66);border:1px solid rgba(159,178,198,.18);border-radius:14px;padding:14px 15px;backdrop-filter:blur(6px);}
+  .insight-card .insight-ic{font-size:18px;line-height:1;margin-top:2px;}
+  .insight-card strong{display:block;font-size:13.5px;color:#FFFFFF;margin-bottom:3px;}
+  .insight-card p{margin:0;font-size:12.5px;line-height:1.5;color:#9FB2C6;}
+  .splash-actions{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+  .splash-cta{padding:14px 30px;font-size:15px;border-radius:12px;box-shadow:0 14px 30px -10px rgba(15,110,99,.55);}
+  .splash-access-note{font-size:12.5px;color:#8CA0B5;}
+  .splash-right{flex:.85;display:flex;flex-direction:column;gap:16px;min-width:0;}
+  .splash-photo{position:relative;margin:0;border-radius:16px;overflow:hidden;border:1px solid rgba(159,178,198,.22);box-shadow:0 26px 50px -22px rgba(0,0,0,.65);}
+  .splash-photo img{display:block;width:100%;height:190px;object-fit:cover;filter:saturate(.92);}
+  .splash-photo-main img{height:230px;}
+  .splash-photo figcaption{position:absolute;left:0;right:0;bottom:0;padding:26px 14px 10px;font-size:11.5px;font-weight:600;letter-spacing:.04em;color:#EAF1F7;background:linear-gradient(transparent,rgba(7,13,21,.88));}
+  .splash-footer{position:relative;z-index:2;padding:0 32px 22px;text-align:center;font-size:11.5px;color:#72869B;}
+  @media (max-width:960px){
+    .splash-content{flex-direction:column;align-items:stretch;gap:28px;padding-top:26px;}
+    .splash-right{flex-direction:row;}
+    .splash-photo{flex:1;}
+    .splash-photo img,.splash-photo-main img{height:170px;}
+  }
+  @media (max-width:640px){
+    .splash-topbar-tag{display:none;}
+    .splash-insights{grid-template-columns:1fr;}
+    .splash-right{display:none;}
+    .splash-content{padding:22px 20px;}
+    .splash-topbar{padding:20px 20px 0;}
+  }
+
   /* ---------- LOGIN ---------- */
   #login-view{
     min-height:100vh;display:flex;align-items:center;justify-content:center;
@@ -312,8 +354,48 @@
 
 <button class="theme-toggle" id="theme-toggle" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">🌙</button>
 
+<!-- ================= SPLASH / ABERTURA ================= -->
+<div id="splash-view">
+  <div class="splash-bg"></div>
+  <div class="splash-overlay"></div>
+  <header class="splash-topbar">
+    <div class="splash-brand"><span class="dot"></span><span>GRUPO LABMEDIC</span></div>
+    <span class="splash-topbar-tag">Assistência Técnica · Equipamentos Laboratoriais Hospitalares</span>
+  </header>
+  <div class="splash-content">
+    <div class="splash-left">
+      <span class="splash-eyebrow">Sistema de Atendimento Técnico Interno</span>
+      <h1>Suporte técnico especializado para <em>laboratórios hospitalares</em></h1>
+      <p class="splash-sub">Central de atendimento do GRUPO LABMEDIC: triagem, acompanhamento e resolução de chamados técnicos de equipamentos laboratoriais — tudo em um só lugar, com registro completo de cada interação.</p>
+      <div class="splash-insights">
+        <div class="insight-card"><span class="insight-ic">⚡</span><div><strong>Resposta ágil</strong><p>Triagem e primeiro retorno imediatos via WhatsApp.</p></div></div>
+        <div class="insight-card"><span class="insight-ic">🏥</span><div><strong>Foco laboratorial</strong><p>Agentes especializados em equipamentos de análises clínicas.</p></div></div>
+        <div class="insight-card"><span class="insight-ic">🛡</span><div><strong>Rastreabilidade total</strong><p>Histórico e auditoria de cada atendimento, do início ao fim.</p></div></div>
+        <div class="insight-card"><span class="insight-ic">📊</span><div><strong>Gestão por indicadores</strong><p>Painéis com métricas de SLA, volume e desempenho em tempo real.</p></div></div>
+      </div>
+      <div class="splash-actions">
+        <button class="btn btn-primary splash-cta" id="btn-ir-login">Acessar o sistema →</button>
+        <span class="splash-access-note">Acesso restrito a agentes autorizados</span>
+      </div>
+    </div>
+    <div class="splash-right">
+      <figure class="splash-photo splash-photo-main">
+        <img src="https://sspark.genspark.ai/cfimages?u1=7CkCUKa4NMB3gseitPmb5cVlUYBOn60QB8q4vWQVdCMBqdxYr%2Bsi7XnmDrDZdomnJdKDDxGkPolawZgcbSMxYAH7Aa9%2FvF0snygiQlIEwg%3D%3D&u2=ZSE154qa9L%2B4aJt5&width=2560" alt="Equipe de call center em atendimento técnico"/>
+        <figcaption>Central de atendimento multicanal</figcaption>
+      </figure>
+      <figure class="splash-photo">
+        <img src="https://sspark.genspark.ai/cfimages?u1=L7p7m8U0SwyH%2BuyZOFFaJLp0rjHFCRZB9hUAf%2BbvIMXL46rmc8bItqgx7CtLQVCq3A4KaeDdLyp6vrgh%2FAbp0x6iAfKA5AeBf6jRphzz2sGdH2zEOQWfI2GvGP0aHqN2QA%3D%3D&u2=9q5d2dZnlly6B%2Fm3&width=2560" alt="Técnico realizando manutenção em equipamento hospitalar"/>
+        <figcaption>Manutenção e suporte a equipamentos laboratoriais</figcaption>
+      </figure>
+    </div>
+  </div>
+  <footer class="splash-footer">
+    <span>GRUPO LABMEDIC © — Suporte técnico via WhatsApp · Uso interno</span>
+  </footer>
+</div>
+
 <!-- ================= LOGIN ================= -->
-<div id="login-view">
+<div id="login-view" style="display:none;">
   <div class="login-card" id="login-card-normal">
     <div class="login-brand"><span class="dot"></span><span>GRUPO LABMEDIC</span></div>
     <p class="sub" style="font-weight:600;color:var(--text);margin-bottom:2px;">Sistema de Atendimento Técnico Interno</p>
@@ -781,12 +863,14 @@ async function iniciarSupabase(){
     // essa sessão temporária de recuperação.
     let emFluxoRecuperacaoSenha = window.location.hash.includes('type=recovery');
     if(emFluxoRecuperacaoSenha){
+      irParaLogin();
       $('#login-card-normal').style.display = 'none';
       $('#login-card-nova-senha').style.display = 'block';
     }
     sb.auth.onAuthStateChange((event)=>{
       if(event === 'PASSWORD_RECOVERY'){
         emFluxoRecuperacaoSenha = true;
+        irParaLogin();
         $('#login-card-normal').style.display = 'none';
         $('#login-card-nova-senha').style.display = 'block';
       }
@@ -875,6 +959,13 @@ function iniciais(nome){
 }
 
 // ---------------- AUTENTICAÇÃO ----------------
+// ---------------- SPLASH / TELA DE ABERTURA ----------------
+function irParaLogin(){
+  $('#splash-view').style.display = 'none';
+  $('#login-view').style.display = 'flex';
+}
+$('#btn-ir-login').addEventListener('click', irParaLogin);
+
 $('#btn-login').addEventListener('click', doLogin);
 $('#login-password').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
 
@@ -1023,6 +1114,7 @@ async function afterLogin(session){
       }
     }
 
+    $('#splash-view').style.display = 'none';
     $('#login-view').style.display = 'none';
     $('#app-view').style.display = 'block';
 
@@ -3141,5 +3233,6 @@ $('#modal-close').addEventListener('click', ()=> $('#modal-overlay').classList.r
 $('#modal-overlay').addEventListener('click', (e)=>{ if(e.target.id==='modal-overlay') $('#modal-overlay').classList.remove('active'); });
 
 </script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79"}' crossorigin="anonymous"></script>
 </body>
 </html>
