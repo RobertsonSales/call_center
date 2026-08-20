@@ -369,6 +369,7 @@
     <div class="nav-group-label" id="nav-group-supervisor" style="display:none;">Supervisão</div>
     <div class="nav-item" data-view="supervisao" id="nav-supervisao" style="display:none;"><span class="ic">🛡</span>Todos os atendimentos</div>
     <div class="nav-item" data-view="agentes" id="nav-agentes" style="display:none;"><span class="ic">👤</span>Agentes</div>
+    <div class="nav-item" data-view="categorias" id="nav-categorias" style="display:none;"><span class="ic">🏷</span>Categorias de Encerramento</div>
     <div class="sidebar-footer">
       <div class="agent-chip">
         <div class="agent-avatar" id="agent-avatar">--</div>
@@ -639,6 +640,25 @@
         <div class="card card-pad">
           <p class="section-title">Equipe cadastrada</p>
           <div id="agentes-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-categorias">
+      <div class="topbar"><div><h1>Categorias de Encerramento</h1><p>Motivos disponíveis para o agente escolher ao encerrar um atendimento.</p></div></div>
+      <div class="grid-2">
+        <div class="card card-pad">
+          <p class="section-title" id="titulo-form-categoria">Nova categoria</p>
+          <div class="field"><label>Nome</label><input id="fcat-nome" placeholder="Ex: Resolvido remotamente"/></div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" style="flex:1;" id="btn-criar-categoria">Adicionar categoria</button>
+            <button class="btn btn-ghost" id="btn-cancelar-edicao-categoria" style="display:none;">Cancelar edição</button>
+          </div>
+        </div>
+        <div class="card card-pad">
+          <p class="section-title">Categorias cadastradas</p>
+          <p class="hint" style="margin:-4px 0 12px;">Clique numa linha para editar o nome. Inativar remove a opção da lista de encerramento, sem apagar o histórico já registrado com ela.</p>
+          <div id="categorias-list-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
         </div>
       </div>
     </section>
@@ -994,6 +1014,7 @@ async function afterLogin(session){
       const grp = $('#nav-group-supervisor'); if(grp) grp.style.display = 'block';
       const navSup = $('#nav-supervisao'); if(navSup) navSup.style.display = 'flex';
       const navAg = $('#nav-agentes'); if(navAg) navAg.style.display = 'flex';
+      const navCat = $('#nav-categorias'); if(navCat) navCat.style.display = 'flex';
       setText('#agent-role-badge', '· Supervisor');
       try{
         await carregarAgentesParaFiltro();
@@ -1078,6 +1099,7 @@ function switchView(view){
   if(view==='supervisao') renderSupervisao();
   if(view==='agentes') renderAgentes();
   if(view==='catalogo') renderCatalogo();
+  if(view==='categorias') renderCategorias();
   if(view==='novo'){ $('#novo-confirmacao').style.display='none'; $('#novo-form-preview').style.display='block'; }
 }
 
@@ -2347,6 +2369,74 @@ $('#btn-pdf-supervisao')?.addEventListener('click', ()=> exportarPDF(supervisaoD
 $('#btn-excel-supervisao')?.addEventListener('click', ()=> exportarExcel(supervisaoDataAtual, 'supervisao_atendimentos', true));
 
 // ---------------- AGENTES (somente admin) ----------------
+// ---------------- CATEGORIAS DE ENCERRAMENTO (somente supervisor) ----------------
+let categoriaEditandoId = null;
+
+async function renderCategorias(){
+  const wrap = $('#categorias-list-wrap');
+  const { data, error } = await sb.from('categorias_encerramento').select('*').order('nome');
+  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar categorias.</p>'; return; }
+  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🏷</div>Nenhuma categoria cadastrada ainda.</div>`; return; }
+
+  wrap.innerHTML = `<div class="table-scroll"><table><thead><tr>
+      <th>Nome</th><th>Status</th><th></th>
+    </tr></thead><tbody>
+    ${data.map(c=>`
+      <tr data-row-categoria="${c.id}" style="cursor:pointer;">
+        <td style="font-weight:600;">${escapeHtml(c.nome)}</td>
+        <td>${c.ativo ? '<span class="badge badge-encerrado">Ativa</span>' : '<span class="badge badge-aberto">Inativa</span>'}</td>
+        <td style="text-align:right;white-space:nowrap;">
+          <button class="btn btn-ghost btn-sm" data-toggle-categoria="${c.id}">${c.ativo?'Inativar':'Ativar'}</button>
+        </td>
+      </tr>`).join('')}
+    </tbody></table></div>`;
+
+  wrap.querySelectorAll('[data-row-categoria]').forEach(tr=>{
+    const c = data.find(x=>x.id===tr.dataset.rowCategoria);
+    tr.addEventListener('click', (e)=>{ if(!e.target.closest('button')) carregarCategoriaParaEdicao(c); });
+  });
+  wrap.querySelectorAll('[data-toggle-categoria]').forEach(btn=>{
+    const c = data.find(x=>x.id===btn.dataset.toggleCategoria);
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const { error: err } = await sb.from('categorias_encerramento').update({ ativo: !c.ativo }).eq('id', c.id);
+      if(err){ toast('Erro: '+err.message); return; }
+      renderCategorias();
+    });
+  });
+}
+
+function carregarCategoriaParaEdicao(categoria){
+  categoriaEditandoId = categoria.id;
+  $('#fcat-nome').value = categoria.nome || '';
+  $('#btn-criar-categoria').textContent = 'Salvar alterações';
+  $('#btn-cancelar-edicao-categoria').style.display = 'inline-flex';
+  $('#titulo-form-categoria').textContent = 'Editar categoria';
+}
+function cancelarEdicaoCategoria(){
+  categoriaEditandoId = null;
+  $('#fcat-nome').value = '';
+  $('#btn-criar-categoria').textContent = 'Adicionar categoria';
+  $('#btn-cancelar-edicao-categoria').style.display = 'none';
+  $('#titulo-form-categoria').textContent = 'Nova categoria';
+}
+
+$('#btn-criar-categoria')?.addEventListener('click', async ()=>{
+  const nome = $('#fcat-nome').value.trim();
+  if(!nome){ toast('Informe o nome da categoria.'); return; }
+
+  const payload = { nome };
+  const { error } = categoriaEditandoId
+    ? await sb.from('categorias_encerramento').update(payload).eq('id', categoriaEditandoId)
+    : await sb.from('categorias_encerramento').insert(payload);
+
+  if(error){ toast('Erro ao salvar categoria: '+(error.message.includes('duplicate')?'já existe uma categoria com esse nome.':error.message)); return; }
+  toast(categoriaEditandoId ? 'Categoria atualizada.' : 'Categoria cadastrada.');
+  cancelarEdicaoCategoria();
+  renderCategorias();
+});
+$('#btn-cancelar-edicao-categoria')?.addEventListener('click', cancelarEdicaoCategoria);
+
 async function renderAgentes(){
   const wrap = $('#agentes-table-wrap');
   const { data, error } = await sb.from('agentes').select('*').order('nome');
@@ -2469,6 +2559,7 @@ async function alternarAdminAgente(agente){
     $('#nav-group-supervisor').style.display = 'none';
     $('#nav-supervisao').style.display = 'none';
     $('#nav-agentes').style.display = 'none';
+    $('#nav-categorias').style.display = 'none';
     $('#agent-role-badge').textContent = '';
     switchView('dashboard');
     return;
@@ -2646,6 +2737,7 @@ async function exportarProtocoloPDF(atendimento, interacoes, modo='download'){
     ['Início', fmtData(atendimento.criado_em)],
     ['Fim', atendimento.encerrado_em ? fmtData(atendimento.encerrado_em) : '—'],
     ['Duração', calcDuracao(atendimento.criado_em, atendimento.encerrado_em)],
+    ...(atendimento.motivo_encerramento ? [['Motivo do encerramento', atendimento.motivo_encerramento]] : []),
     ['Problema inicial', atendimento.descricao_problema || '—']
   ];
   doc.autoTable({
@@ -2719,6 +2811,7 @@ async function abrirDetalhe(id){
         <div><span class="label">Início</span><span class="val">${fmtData(atendimento.criado_em)}</span></div>
         <div><span class="label">Fim</span><span class="val">${atendimento.encerrado_em ? fmtData(atendimento.encerrado_em) : '—'}</span></div>
         <div><span class="label">Duração</span><span class="val">${calcDuracao(atendimento.criado_em, atendimento.encerrado_em)}</span></div>
+        ${atendimento.motivo_encerramento ? `<div><span class="label">Motivo do encerramento</span><span class="val">${escapeHtml(atendimento.motivo_encerramento)}</span></div>` : ''}
       </div>
     </div>
 
@@ -2827,12 +2920,61 @@ async function salvarObservacaoCliente(atendimento){
   abrirDetalhe(atendimento.id);
 }
 
+// Encerrar exige escolher um motivo — mostra um formulário dentro do
+// próprio modal (não dá pra confirmar sem selecionar uma opção).
 async function encerrarAtendimento(atendimento){
-  if(!confirm('Encerrar este atendimento?')) return;
-  await sb.from('atendimentos').update({status:'encerrado', encerrado_em: new Date().toISOString()}).eq('id', atendimento.id);
-  toast('Atendimento encerrado.');
-  abrirDetalhe(atendimento.id);
-  atualizarListaAtivaEmSegundoPlano();
+  const { data: categorias, error } = await sb.from('categorias_encerramento')
+    .select('*').eq('ativo', true).order('nome');
+  if(error){ toast('Erro ao carregar categorias de encerramento: '+error.message); return; }
+  if(!categorias || !categorias.length){
+    toast('Nenhuma categoria de encerramento cadastrada — peça ao Supervisor para cadastrar em "Categorias de Encerramento".');
+    return;
+  }
+
+  $('#modal-protocolo-label').textContent = 'Encerrar atendimento';
+  $('#modal-protocolo').textContent = atendimento.protocolo;
+  $('#modal-body').innerHTML = `
+    <p class="section-sub" style="margin:14px 0 16px;">Selecione o motivo do encerramento — obrigatório para concluir.</p>
+    <div class="field">
+      <label>Motivo do encerramento</label>
+      <select id="motivo-encerramento-select">
+        <option value="">Selecione…</option>
+        ${categorias.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('')}
+      </select>
+    </div>
+    <div id="encerrar-erro" class="error-msg"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-primary" style="flex:1;" id="btn-confirmar-encerramento">Confirmar encerramento</button>
+      <button class="btn btn-ghost" id="btn-cancelar-encerramento">Cancelar</button>
+    </div>
+  `;
+  $('#btn-cancelar-encerramento').addEventListener('click', ()=> abrirDetalhe(atendimento.id));
+  $('#btn-confirmar-encerramento').addEventListener('click', async ()=>{
+    const select = $('#motivo-encerramento-select');
+    const categoriaId = select.value;
+    const errBox = $('#encerrar-erro');
+    if(!categoriaId){
+      errBox.textContent = 'Escolha um motivo antes de confirmar — este campo é obrigatório.';
+      errBox.style.display = 'block';
+      return;
+    }
+    const categoria = categorias.find(c=>c.id===categoriaId);
+    const btn = $('#btn-confirmar-encerramento');
+    btn.disabled = true; btn.textContent = 'Encerrando…';
+    const { error: updErr } = await sb.from('atendimentos').update({
+      status:'encerrado', encerrado_em: new Date().toISOString(),
+      categoria_encerramento_id: categoriaId, motivo_encerramento: categoria.nome
+    }).eq('id', atendimento.id);
+    if(updErr){
+      errBox.textContent = 'Erro ao encerrar: '+updErr.message;
+      errBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Confirmar encerramento';
+      return;
+    }
+    toast('Atendimento encerrado — motivo: '+categoria.nome);
+    abrirDetalhe(atendimento.id);
+    atualizarListaAtivaEmSegundoPlano();
+  });
 }
 
 // ---------------- TRANSFERÊNCIA / REENVIO ----------------
@@ -2859,6 +3001,10 @@ function mostrarFormularioEnvio(atendimento, interacoes, modo){
       <input type="file" id="dest-arquivo" accept="image/*,.pdf"/>
       <p class="hint">Foto, PDF etc. — um link para o arquivo é incluído na mensagem enviada.</p>
     </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:16px;cursor:pointer;">
+      <input type="checkbox" id="dest-presencial" style="width:16px;height:16px;"/>
+      Redirecionamento para técnico em visita presencial
+    </label>
     <div id="dest-status" class="hint" style="margin-bottom:10px;"></div>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-primary" style="flex:1;" id="btn-confirmar-envio">${ehTransferencia ? 'Transferir e enviar' : 'Reenviar e enviar'}</button>
@@ -2875,6 +3021,7 @@ async function confirmarEnvio(atendimento, interacoes, modo){
   const nome = $('#dest-nome').value.trim();
   const telefone = comDDI55($('#dest-telefone').value);
   const arquivo = $('#dest-arquivo').files[0];
+  const presencial = $('#dest-presencial').checked;
   const status = $('#dest-status');
 
   if(!telefone){ toast('Informe o WhatsApp do destinatário.'); return; }
@@ -2895,7 +3042,7 @@ async function confirmarEnvio(atendimento, interacoes, modo){
     }
 
     status.textContent = ehTransferencia ? 'Registrando transferência…' : 'Registrando reenvio…';
-    const resumo = montarResumoHistorico(atendimento, interacoes, { destinatarioNome: nome, destinatarioTelefone: telefone, anexoUrl });
+    const resumo = montarResumoHistorico(atendimento, interacoes, { destinatarioNome: nome, destinatarioTelefone: telefone, anexoUrl, redirecionamentoPresencial: presencial });
 
     if(ehTransferencia){
       await sb.from('atendimentos').update({status:'transferido'}).eq('id', atendimento.id);
@@ -2946,7 +3093,12 @@ function montarResumoHistorico(atendimento, interacoes, destino={}){
 
   if(destino.anexoUrl) txt += `\n📎 *Evidência anexada:* ${destino.anexoUrl}\n`;
 
-  txt += `\nPor favor, dê continuidade ao atendimento a partir deste ponto.`;
+  // Essa frase só faz sentido quando alguém vai assumir presencialmente
+  // — num reenvio comum (ex: só mandar uma cópia para referência), não
+  // se aplica.
+  if(destino.redirecionamentoPresencial){
+    txt += `\nPor favor, dê continuidade ao atendimento a partir deste ponto.`;
+  }
   return txt;
 }
 
