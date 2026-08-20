@@ -493,7 +493,7 @@
     <section class="view" id="view-linhas">
       <div class="topbar"><div><h1>Linhas de WhatsApp</h1><p>Números que recebem chamados e geram protocolos.</p></div></div>
       <div class="grid-2">
-        <div class="card card-pad">
+        <div class="card card-pad" id="linha-form-wrap" style="display:none;">
           <p class="section-title">Cadastrar nova linha</p>
           <div class="field"><label>Nome da linha</label><input id="fl-nome" placeholder="Ex: Suporte Técnico — RJ"/></div>
           <div class="field"><label>Número (celular)</label>
@@ -503,7 +503,7 @@
         </div>
         <div class="card card-pad">
           <p class="section-title">Linhas cadastradas</p>
-          <p class="section-sub">Editar, ativar/inativar ou excluir (linhas com histórico não podem ser excluídas — inative-as).</p>
+          <p class="section-sub" id="linhas-list-sub">Editar, ativar/inativar ou excluir (linhas com histórico não podem ser excluídas — inative-as).</p>
           <div id="linhas-list-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
         </div>
       </div>
@@ -511,12 +511,12 @@
 
     <!-- ---------- CLIENTES & EQUIPAMENTOS ---------- -->
     <section class="view" id="view-catalogo">
-      <div class="topbar"><div><h1>Clientes &amp; Equipamentos</h1><p>Catálogo usado na busca inteligente ao abrir um atendimento. Consulta liberada a todos; cadastro é do Supervisor.</p></div></div>
+      <div class="topbar"><div><h1>Clientes &amp; Equipamentos</h1><p>Consulte clientes e os equipamentos vinculados a eles pelas caixas de busca abaixo. Cadastrar, editar ou inativar é reservado ao Supervisor.</p></div></div>
 
       <div class="grid-2" id="catalogo-forms" style="display:none;margin-bottom:16px;">
         <div class="card card-pad">
           <p class="section-title" id="titulo-form-cliente">Novo cliente</p>
-          <p class="hint" style="margin:-4px 0 12px;">Digite para filtrar a lista abaixo — clique numa linha para editar.</p>
+          <p class="hint" style="margin:-4px 0 12px;">Preencha para cadastrar uma nova unidade, ou clique numa linha da lista ao lado para editar.</p>
           <div class="field"><label>Unidade (nome operacional)</label><input id="fc-nome" placeholder="Ex: Hospital São Lucas — Unidade Barra"/></div>
           <div class="field"><label>Cliente (grupo/razão social, opcional)</label><input id="fc-grupo" placeholder="Ex: Rede São Lucas Saúde Ltda"/></div>
           <div class="field"><label>Categoria</label><input id="fc-categoria" placeholder="Ex: Hospital, Clínica, Laboratório"/></div>
@@ -530,7 +530,7 @@
         </div>
         <div class="card card-pad">
           <p class="section-title" id="titulo-form-equip">Novo equipamento</p>
-          <p class="hint" style="margin:-4px 0 12px;">Digite para filtrar a lista abaixo — clique numa linha para editar.</p>
+          <p class="hint" style="margin:-4px 0 12px;">Preencha para cadastrar um novo equipamento, ou clique numa linha da lista ao lado para editar.</p>
           <div class="field"><label>Nome</label><input id="fe-nome" placeholder="Ex: Analisador Bioquímico X200"/></div>
           <div class="field"><label>Categoria</label><input id="fe-categoria" placeholder="Ex: Bioquímica, Hematologia"/></div>
           <div class="field"><label>Cliente onde está instalado</label>
@@ -548,10 +548,16 @@
       <div class="grid-2">
         <div class="card card-pad">
           <p class="section-title">Clientes cadastrados</p>
+          <div class="field" style="margin-bottom:12px;">
+            <input id="busca-clientes-lista" placeholder="🔍 Buscar por unidade ou cliente/grupo…" autocomplete="off"/>
+          </div>
           <div id="clientes-list-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
         </div>
         <div class="card card-pad">
           <p class="section-title">Equipamentos cadastrados</p>
+          <div class="field" style="margin-bottom:12px;">
+            <input id="busca-equip-lista" placeholder="🔍 Buscar por equipamento, categoria, série ou cliente…" autocomplete="off"/>
+          </div>
           <div id="equipamentos-list-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
         </div>
       </div>
@@ -1118,6 +1124,11 @@ $('#btn-criar-linha').addEventListener('click', async ()=>{
 
 async function renderLinhas(){
   const wrap = $('#linhas-list-wrap');
+  $('#linha-form-wrap').style.display = currentAgente.is_admin ? 'block' : 'none';
+  $('#linhas-list-sub').textContent = currentAgente.is_admin
+    ? 'Editar, ativar/inativar ou excluir (linhas com histórico não podem ser excluídas — inative-as).'
+    : 'Consulta — apenas o Supervisor pode cadastrar, editar ou inativar linhas.';
+
   const { data, error } = await sb.from('linhas').select('*').order('criado_em', {ascending:false});
   if(error){ wrap.innerHTML = `<p class="hint">Erro ao carregar linhas.</p>`; return; }
   if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">☏</div>Nenhuma linha cadastrada ainda.</div>`; return; }
@@ -1129,12 +1140,16 @@ async function renderLinhas(){
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
         <span class="badge ${l.ativo?'badge-encerrado':'badge-aberto'}">${l.ativo?'Ativa':'Inativa'}</span>
+        ${currentAgente.is_admin ? `
         <button class="btn btn-ghost btn-sm" data-edit-linha="${l.id}">Editar</button>
         <button class="btn btn-ghost btn-sm" data-toggle-linha="${l.id}">${l.ativo?'Inativar':'Ativar'}</button>
         <button class="btn btn-danger-ghost btn-sm" data-del-linha="${l.id}">Excluir</button>
+        ` : ''}
       </div>
     </div>
   `).join('');
+
+  if(!currentAgente.is_admin) return;
 
   wrap.querySelectorAll('[data-edit-linha]').forEach(btn=>{
     const l = data.find(x=>x.id===btn.dataset.editLinha);
@@ -1331,9 +1346,12 @@ function cancelarEdicaoEquipamento(){
   renderizarTabelaEquipamentos(equipamentosCache);
 }
 
-// filtro em tempo real das listas, ao digitar nos campos "Unidade" / "Nome"
-$('#fc-nome')?.addEventListener('input', ()=>{
-  renderizarTabelaClientes(filtrarPorTexto(clientesCache, $('#fc-nome').value, ['nome','cliente_grupo']));
+// caixas de busca sempre visíveis (para qualquer agente, não só
+// Supervisor) — independentes dos campos "Unidade"/"Nome" do
+// formulário de cadastro, que agora servem só para criar um registro
+// novo, sem efeito colateral de filtrar a lista.
+$('#busca-clientes-lista')?.addEventListener('input', ()=>{
+  renderizarTabelaClientes(filtrarPorTexto(clientesCache, $('#busca-clientes-lista').value, ['nome','cliente_grupo']));
 });
 
 // Equipamentos: a lista pré-carregada só traz os 300 primeiros (em
@@ -1341,9 +1359,9 @@ $('#fc-nome')?.addEventListener('input', ()=>{
 // de fora qualquer coisa fora dessa fatia. Por isso a busca aqui
 // consulta o banco diretamente (com debounce), como no modal do painel.
 let timerFiltroEquip = null;
-$('#fe-nome')?.addEventListener('input', ()=>{
+$('#busca-equip-lista')?.addEventListener('input', ()=>{
   clearTimeout(timerFiltroEquip);
-  const termo = $('#fe-nome').value.trim();
+  const termo = $('#busca-equip-lista').value.trim();
   if(!termo){ renderizarTabelaEquipamentos(equipamentosCache); return; }
   $('#equipamentos-list-wrap').innerHTML = '<div class="loading-row"><div class="spinner"></div>Buscando…</div>';
   timerFiltroEquip = setTimeout(async ()=>{
@@ -1353,7 +1371,14 @@ $('#fe-nome')?.addEventListener('input', ()=>{
       .order('nome')
       .limit(100);
     if(error){ $('#equipamentos-list-wrap').innerHTML = '<p class="hint">Erro na busca: '+error.message+'</p>'; return; }
-    renderizarTabelaEquipamentos(data || [], 100);
+    let resultados = data || [];
+    // reforço sem acento sobre o resultado, já que o cliente vinculado
+    // também pode ser encontrado pelo nome e o ILIKE não ignora acentos
+    const alvo = normalizarTexto(termo);
+    const porNomeCliente = equipamentosCache.filter(e =>
+      normalizarTexto(e.clientes?.nome||'').includes(alvo) && !resultados.some(r=>r.id===e.id)
+    );
+    renderizarTabelaEquipamentos([...resultados, ...porNomeCliente], 100);
   }, 300);
 });
 
