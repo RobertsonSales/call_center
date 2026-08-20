@@ -706,7 +706,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <!-- Gráficos do quadro de métricas de performance (Supervisão) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -1032,7 +1032,7 @@ function aplicarTema(tema){
   localStorage.setItem('lm_tema', tema);
   // recoloreia os gráficos de métricas (cores vêm de variáveis CSS do tema)
   if(typeof atualizarPainelMetricas === 'function' && document.getElementById('view-supervisao')?.classList.contains('active')){
-    atualizarPainelMetricas();
+    try{ atualizarPainelMetricas(); }catch(err){ console.error('[metricas-tema]', err); }
   }
 }
 
@@ -2162,8 +2162,14 @@ function computarMetricas(lista){
 }
 
 function renderMetricas(lista){
-  metricasDadosAtual = computarMetricas(lista||[]);
-  atualizarPainelMetricas();
+  try{
+    metricasDadosAtual = computarMetricas(lista||[]);
+    atualizarPainelMetricas();
+  }catch(err){
+    console.error('[metricas]', err);
+    const wrap = $('#metricas-tabela-wrap');
+    if(wrap) wrap.innerHTML = '<p class="hint" style="margin:0;">Não foi possível carregar os gráficos de métricas.</p>';
+  }
 }
 
 function linhasDaDimensaoAtual(){
@@ -2255,7 +2261,7 @@ $$('#metricas-tabs .dim-tab').forEach(btn=>{
     $$('#metricas-tabs .dim-tab').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     metricasDimensaoAtual = btn.dataset.dim;
-    atualizarPainelMetricas();
+    try{ atualizarPainelMetricas(); }catch(err){ console.error('[metricas-tab]', err); }
   });
 });
 
