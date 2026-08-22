@@ -945,6 +945,30 @@ function waLink(numero, texto){
 // não força o agente a reconectar o WhatsApp Web de novo.
 const WA_TAB = 'labmedic_whatsapp';
 
+// O reaproveitamento por nome (acima) nem sempre é suficiente: um
+// window.open() disparado depois de um await (ex.: logo após salvar no
+// Supabase) já não conta como gesto direto do usuário para o navegador,
+// que pode bloqueá-lo ou abri-lo sem vínculo ao nome; e o próprio
+// redirecionamento do wa.me até o web.whatsapp.com pode "perder" essa
+// amarração pelo nome. Por isso guardamos a referência real da janela:
+// se ela ainda estiver aberta, só navegamos dentro dela (sem abrir
+// outra); só abrimos uma nova de fato quando a anterior foi fechada.
+let waWindowRef = null;
+function abrirWhatsApp(numero, texto){
+  const url = waLink(numero, texto);
+  if(waWindowRef && !waWindowRef.closed){
+    try{
+      waWindowRef.location.href = url;
+      waWindowRef.focus();
+      return waWindowRef;
+    }catch(err){
+      console.warn('[whatsapp] não foi possível reaproveitar a aba existente, abrindo novamente.', err);
+    }
+  }
+  waWindowRef = window.open(url, WA_TAB);
+  return waWindowRef;
+}
+
 function fmtData(iso){
   const d = new Date(iso);
   return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
@@ -2141,9 +2165,9 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
     toast('Protocolo '+data.protocolo+' criado!');
 
     // tentativa automática (pode ser bloqueada por bloqueador de pop-up,
-    // já que ocorre depois de chamadas assíncronas) — por isso o link
-    // clicável abaixo é o caminho garantido, não só um extra.
-    window.open(waLink(cliente_telefone, mensagem), WA_TAB);
+    // já que ocorre depois de chamadas assíncronas) — por isso o botão
+    // abaixo (com clique próprio) é o caminho garantido, não só um extra.
+    abrirWhatsApp(cliente_telefone, mensagem);
 
     $('#novo-form-preview').style.display = 'none';
     $('#novo-confirmacao').style.display = 'block';
@@ -2151,7 +2175,7 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
     $('#novo-confirmacao-mensagem').textContent = mensagem;
     const link = $('#novo-confirmacao-link');
     link.href = waLink(cliente_telefone, mensagem);
-    link.target = WA_TAB;
+    link.onclick = (e)=>{ e.preventDefault(); abrirWhatsApp(cliente_telefone, mensagem); };
     ultimoAtendimentoCriadoId = data.id;
 
   }catch(err){
@@ -2921,7 +2945,7 @@ async function abrirDetalhe(id){
     </div>` : ''}
 
     <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
-      <a class="btn btn-whatsapp btn-sm" target="${WA_TAB}" href="${waLink(atendimento.cliente_telefone,'Olá '+atendimento.cliente_nome+', tudo bem? Sobre o protocolo '+atendimento.protocolo+': ')}">Abrir WhatsApp do cliente</a>
+      <a class="btn btn-whatsapp btn-sm" id="btn-abrir-whatsapp-cliente" href="${waLink(atendimento.cliente_telefone,'Olá '+atendimento.cliente_nome+', tudo bem? Sobre o protocolo '+atendimento.protocolo+': ')}">Abrir WhatsApp do cliente</a>
       ${atendimento.status!=='encerrado' ? `<button class="btn btn-ghost btn-sm" id="btn-encerrar">Encerrar atendimento</button>`:''}
       <button class="btn btn-ghost btn-sm" id="btn-transferir">Transferir / reenviar histórico</button>
       <button class="btn btn-ghost btn-sm" id="btn-visualizar-pdf-protocolo">👁 Visualizar PDF</button>
@@ -2951,6 +2975,10 @@ async function abrirDetalhe(id){
   $('#btn-salvar-observacao').addEventListener('click', ()=> salvarObservacaoCliente(atendimento));
   const btnEnc = $('#btn-encerrar');
   if(btnEnc) btnEnc.addEventListener('click', ()=> encerrarAtendimento(atendimento));
+  $('#btn-abrir-whatsapp-cliente').addEventListener('click', (e)=>{
+    e.preventDefault();
+    abrirWhatsApp(atendimento.cliente_telefone, 'Olá '+atendimento.cliente_nome+', tudo bem? Sobre o protocolo '+atendimento.protocolo+': ');
+  });
   $('#btn-transferir').addEventListener('click', ()=> abrirTransferencia(atendimento, interacoes||[]));
   $('#btn-visualizar-pdf-protocolo').addEventListener('click', ()=> exportarProtocoloPDF(atendimento, interacoes||[], 'view'));
   $('#btn-exportar-pdf-protocolo').addEventListener('click', ()=> exportarProtocoloPDF(atendimento, interacoes||[], 'download'));
@@ -2993,7 +3021,7 @@ async function salvarInteracao(atendimento, enviarWhatsapp){
   }
 
   if(enviarWhatsapp){
-    window.open(waLink(atendimento.cliente_telefone, texto), WA_TAB);
+    abrirWhatsApp(atendimento.cliente_telefone, texto);
   }
   toast('Procedimento registrado.');
   abrirDetalhe(atendimento.id);
@@ -3200,7 +3228,7 @@ function montarResumoHistorico(atendimento, interacoes, destino={}){
 // window.open() automático depois de chamadas assíncronas — nesse
 // ponto do fluxo, o navegador frequentemente bloqueia como pop-up.
 function mostrarConfirmacaoEnvioModal(atendimentoId, titulo, mensagem, numero){
-  window.open(waLink(numero, mensagem), WA_TAB); // tentativa automática (best-effort)
+  abrirWhatsApp(numero, mensagem); // tentativa automática (best-effort)
   $('#modal-overlay').classList.add('active'); // garante que o modal esteja visível, mesmo vindo de um atalho fora do detalhe
   $('#modal-protocolo-label').textContent = titulo;
   $('#modal-protocolo').textContent = '+'+numero;
@@ -3210,9 +3238,10 @@ function mostrarConfirmacaoEnvioModal(atendimentoId, titulo, mensagem, numero){
     </div>
     <p class="section-title">Mensagem</p>
     <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;max-height:320px;overflow-y:auto;">${escapeHtml(mensagem)}</div>
-    <a class="btn btn-whatsapp btn-block" href="${waLink(numero, mensagem)}" target="${WA_TAB}" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
+    <a class="btn btn-whatsapp btn-block" id="btn-abrir-whatsapp-envio" href="${waLink(numero, mensagem)}" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
     <button class="btn btn-ghost btn-block" id="btn-voltar-detalhe-modal">Voltar ao protocolo</button>
   `;
+  $('#btn-abrir-whatsapp-envio').addEventListener('click', (e)=>{ e.preventDefault(); abrirWhatsApp(numero, mensagem); });
   $('#btn-voltar-detalhe-modal').addEventListener('click', ()=> abrirDetalhe(atendimentoId));
   toast('Pronto — clique no botão para abrir o WhatsApp.');
   atualizarListaAtivaEmSegundoPlano();
