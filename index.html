@@ -35,6 +35,14 @@
     --input-bg-focus:#FFFFFF;
     --input-text:#16212E;
     --input-placeholder:#8B98A8;
+    /* cores fixas (não variam por tema) usadas só no fundo do "ticket" de
+       protocolo — propositalmente sempre escuras, para o texto branco por
+       cima manter contraste forte tanto no tema claro quanto no escuro
+       (no escuro, --primary/--primary-dark ficam mais claros/vibrantes
+       para dar destaque a botões e links, o que é ótimo ali, mas deixaria
+       o texto branco do ticket com contraste fraco se fossem reusadas aqui) */
+    --ticket-grad-1:#0B5148;
+    --ticket-grad-2:#0F6E63;
   }
   [data-theme="dark"]{
     --bg:#0C1119;
@@ -49,8 +57,16 @@
     --text:#E7EDF3;
     --text-muted:#8B9AAD;
     --border:#232E3D;
+    /* --danger/--warning/--info ficam mais claros só no tema escuro —
+       usados como cor do TEXTO sobre os respectivos fundos "-light"
+       (badges, .error-msg, avisos). Os tons originais (pensados para
+       texto escuro sobre fundo claro) ficavam com contraste insuficiente
+       sobre os fundos escuros usados aqui. */
+    --danger:#FF6B6B;
     --danger-light:#3A1D1D;
+    --warning:#F5A623;
     --warning-light:#3A2E15;
+    --info:#4A9EFF;
     --info-light:#152A3D;
     --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
     --input-bg:#1A2432;
@@ -274,7 +290,7 @@
   /* protocol ticket (signature element) */
   .ticket{
     position:relative;border-radius:14px;overflow:hidden;
-    background:linear-gradient(135deg,var(--primary-dark),var(--primary));
+    background:linear-gradient(135deg,var(--ticket-grad-1),var(--ticket-grad-2));
     color:#fff;padding:22px 24px;margin-bottom:18px;
   }
   .ticket::after{
@@ -342,7 +358,13 @@
   .interacao-item .tipo-tag{font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:10px;}
   .interacao-item p{margin:0;font-size:13.5px;line-height:1.5;white-space:pre-wrap;}
 
-  .toast{position:fixed;bottom:22px;right:22px;background:var(--text);color:#fff;padding:12px 18px;border-radius:10px;font-size:13.5px;box-shadow:var(--shadow);z-index:100;opacity:0;transform:translateY(10px);transition:opacity .2s,transform .2s;}
+  /* Fundo sempre escuro (var(--sidebar-bg) é quase preto nos dois temas)
+     com texto sempre branco — antes usava var(--text) como fundo, que no
+     modo escuro é uma cor quase branca, deixando o texto branco por cima
+     praticamente ilegível. Como o toast é uma notificação flutuante e
+     não faz parte do "corpo" da página, faz sentido ele manter sempre o
+     mesmo contraste forte, independente do tema claro/escuro ativo. */
+  .toast{position:fixed;bottom:22px;right:22px;background:var(--sidebar-bg);color:#fff;padding:12px 18px;border-radius:10px;font-size:13.5px;box-shadow:var(--shadow);z-index:100;opacity:0;transform:translateY(10px);transition:opacity .2s,transform .2s;border:1px solid rgba(255,255,255,.08);}
   .toast.show{opacity:1;transform:translateY(0);}
 
   .loading-row{display:flex;align-items:center;gap:10px;color:var(--text-muted);font-size:13px;padding:20px 0;}
@@ -1004,6 +1026,36 @@ function waLink(numero, texto){
 // link), em vez de abrir uma aba nova a cada clique — e assim também
 // não força o agente a reconectar o WhatsApp Web de novo.
 const WA_TAB = 'labmedic_whatsapp';
+
+// Abre (ou reaproveita) a aba nomeada do WhatsApp de forma SÍNCRONA, ainda
+// dentro da própria função do clique do usuário, antes de qualquer await.
+// É essa sincronia que faz o navegador reconhecer a chamada como resultado
+// direto de um clique — sem isso (ex: chamando window.open só depois de um
+// await de upload/insert no banco), a maioria dos navegadores deixa de
+// considerar "ação do usuário" e passa a abrir uma aba/janela nova a cada
+// clique em vez de reaproveitar a mesma, mesmo com o mesmo nome de destino.
+// Uso: capturar a referência no início do handler (ex: no clique do botão),
+// e só navegar essa referência (via winWhats.location.href = ...) depois
+// que os dados assíncronos estiverem prontos.
+function abrirAbaWhatsAppSincrono(){
+  try{
+    return window.open('', WA_TAB);
+  }catch(err){
+    console.warn('[whatsapp] não foi possível abrir a aba antecipadamente:', err);
+    return null;
+  }
+}
+// navega a aba já aberta para o link do WhatsApp; se por algum motivo a
+// referência não existir mais (aba fechada pelo usuário, bloqueador etc.),
+// cai de volta no window.open normal como último recurso.
+function navegarAbaWhatsApp(winWhats, numero, texto){
+  const url = waLink(numero, texto);
+  if(winWhats && !winWhats.closed){
+    winWhats.location.href = url;
+  }else{
+    window.open(url, WA_TAB);
+  }
+}
 
 function fmtData(iso){
   const d = new Date(iso);
@@ -2162,6 +2214,12 @@ $('#btn-cancelar-novo').addEventListener('click', ()=>{
 });
 
 $('#btn-criar-atendimento').addEventListener('click', async ()=>{
+  // aberta já aqui, de forma síncrona (ver abrirAbaWhatsAppSincrono) —
+  // evita que o navegador trate a navegação abaixo (que só acontece
+  // depois dos awaits de gravação no banco) como pop-up bloqueado ou
+  // abra uma nova janela em vez de reaproveitar a mesma aba.
+  const winWhats = abrirAbaWhatsAppSincrono();
+
   const linha_id = $('#f-linha').value;
   const cliente_nome = $('#f-nome').value.trim();
   const cliente_grupo = $('#f-cliente-grupo').value.trim();
@@ -2171,8 +2229,8 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
   const procedimento_sugerido = $('#f-procedimento').value.trim();
   const observacoes_cliente = $('#f-observacoes').value.trim();
 
-  if(!linha_id){ toast('Cadastre e selecione uma linha primeiro.'); return; }
-  if(!cliente_nome || !cliente_telefone){ toast('Informe nome e WhatsApp do cliente.'); return; }
+  if(!linha_id){ toast('Cadastre e selecione uma linha primeiro.'); if(winWhats && !winWhats.closed) winWhats.close(); return; }
+  if(!cliente_nome || !cliente_telefone){ toast('Informe nome e WhatsApp do cliente.'); if(winWhats && !winWhats.closed) winWhats.close(); return; }
 
   const btn = $('#btn-criar-atendimento');
   btn.disabled = true; btn.textContent = 'Gerando…';
@@ -2184,7 +2242,7 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
       status: 'aberto', agente_id: currentAgente.id
     }).select().single();
 
-    if(error){ toast('Erro ao criar atendimento: '+error.message); return; }
+    if(error){ toast('Erro ao criar atendimento: '+error.message); if(winWhats && !winWhats.closed) winWhats.close(); return; }
 
     const mensagem = `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${cliente_nome? 'Unidade: '+cliente_nome+'\n':''}${cliente_grupo? 'Cliente: '+cliente_grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}${procedimento_sugerido? 'Procedimento sugerido: '+procedimento_sugerido+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
 
@@ -2204,10 +2262,9 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
 
     toast('Protocolo '+data.protocolo+' criado!');
 
-    // tentativa automática (pode ser bloqueada por bloqueador de pop-up,
-    // já que ocorre depois de chamadas assíncronas) — por isso o link
-    // clicável abaixo é o caminho garantido, não só um extra.
-    window.open(waLink(cliente_telefone, mensagem), WA_TAB);
+    // navega a aba já aberta no início do clique — sem isso, cai de
+    // volta no window.open normal (ver navegarAbaWhatsApp).
+    navegarAbaWhatsApp(winWhats, cliente_telefone, mensagem);
 
     $('#novo-form-preview').style.display = 'none';
     $('#novo-confirmacao').style.display = 'block';
@@ -2221,6 +2278,7 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
   }catch(err){
     console.error('[criar-atendimento] erro inesperado:', err);
     toast('Erro inesperado ao criar atendimento: '+(err?.message || err));
+    if(winWhats && !winWhats.closed) winWhats.close();
   }finally{
     // garante que o botão NUNCA fique travado em "Gerando…", mesmo se
     // algo lançar uma exceção em vez de só devolver um erro tratável.
@@ -2425,6 +2483,10 @@ $('#btn-cancelar-volume').addEventListener('click', ()=>{
 });
 
 $('#btn-criar-volume').addEventListener('click', async ()=>{
+  // ver comentário equivalente em #btn-criar-atendimento: precisa ser
+  // aberta aqui, ainda de forma síncrona no clique.
+  const winWhats = abrirAbaWhatsAppSincrono();
+
   const linha_id = $('#vt-linha').value;
   const unidade = $('#vt-unidade').value.trim();
   const colaborador = $('#vt-colaborador').value.trim();
@@ -2433,9 +2495,9 @@ $('#btn-criar-volume').addEventListener('click', async ()=>{
   const periodo = $('#vt-periodo').value.trim();
   const mensagemExtra = $('#vt-mensagem').value.trim();
 
-  if(!linha_id){ toast('Cadastre e selecione uma linha primeiro.'); return; }
-  if(!unidade || !telefone){ toast('Informe a unidade e o WhatsApp do colaborador.'); return; }
-  if(!colaborador){ toast('Informe o nome do colaborador que vai responder.'); return; }
+  if(!linha_id){ toast('Cadastre e selecione uma linha primeiro.'); if(winWhats && !winWhats.closed) winWhats.close(); return; }
+  if(!unidade || !telefone){ toast('Informe a unidade e o WhatsApp do colaborador.'); if(winWhats && !winWhats.closed) winWhats.close(); return; }
+  if(!colaborador){ toast('Informe o nome do colaborador que vai responder.'); if(winWhats && !winWhats.closed) winWhats.close(); return; }
 
   const btn = $('#btn-criar-volume');
   btn.disabled = true; btn.textContent = 'Gerando…';
@@ -2461,7 +2523,7 @@ $('#btn-criar-volume').addEventListener('click', async ()=>{
       status: 'aberto', agente_id: currentAgente.id
     }).select().single();
 
-    if(error){ toast('Erro ao criar solicitação: '+error.message); return; }
+    if(error){ toast('Erro ao criar solicitação: '+error.message); if(winWhats && !winWhats.closed) winWhats.close(); return; }
 
     const mensagem = `Olá! 👋\n\nSolicitação interna de volume de testes.\nProtocolo: ${data.protocolo}\nUnidade: ${unidade}\nColaborador: ${colaborador}\n${equipamento?'Equipamento(s): '+equipamento+'\n':''}${periodo?'Período de referência: '+periodo+'\n':''}\nPor favor, nos informe o volume de testes realizados${periodo?' no período':''} pelo(s) equipamento(s) acima. Se possível, envie também o print/foto do contador ou relatório — vamos anexar aqui no protocolo assim que recebermos.${mensagemExtra?'\n\n'+mensagemExtra:''}`;
 
@@ -2472,9 +2534,8 @@ $('#btn-criar-volume').addEventListener('click', async ()=>{
 
     toast('Protocolo '+data.protocolo+' criado!');
 
-    // tentativa automática (pode ser bloqueada por bloqueador de pop-up)
-    // — o link clicável na confirmação abaixo é o caminho garantido.
-    window.open(waLink(telefone, mensagem), WA_TAB);
+    // navega a aba já aberta no início do clique.
+    navegarAbaWhatsApp(winWhats, telefone, mensagem);
 
     $('#volume-form-preview').style.display = 'none';
     $('#vt-confirmacao').style.display = 'block';
@@ -2488,6 +2549,7 @@ $('#btn-criar-volume').addEventListener('click', async ()=>{
   }catch(err){
     console.error('[criar-volume] erro inesperado:', err);
     toast('Erro inesperado ao criar solicitação: '+(err?.message || err));
+    if(winWhats && !winWhats.closed) winWhats.close();
   }finally{
     btn.disabled = false;
     btn.textContent = 'Gerar protocolo';
@@ -3328,6 +3390,12 @@ async function salvarInteracao(atendimento, enviarWhatsapp){
   const texto = $('#nova-interacao').value.trim();
   if(!texto){ toast('Escreva o procedimento antes de salvar.'); return; }
 
+  // precisa ser aberta aqui, antes do primeiro "await" abaixo — é isso
+  // que preserva a sincronia com o clique do usuário (ver
+  // abrirAbaWhatsAppSincrono) e evita abrir uma aba/janela nova a cada
+  // vez que este botão é usado.
+  const winWhats = enviarWhatsapp ? abrirAbaWhatsAppSincrono() : null;
+
   await sb.from('interacoes').insert({
     atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'procedimento', conteudo: texto
   });
@@ -3337,7 +3405,7 @@ async function salvarInteracao(atendimento, enviarWhatsapp){
   }
 
   if(enviarWhatsapp){
-    window.open(waLink(atendimento.cliente_telefone, texto), WA_TAB);
+    navegarAbaWhatsApp(winWhats, atendimento.cliente_telefone, texto);
   }
   toast('Procedimento registrado.');
   abrirDetalhe(atendimento.id);
@@ -3497,6 +3565,10 @@ async function confirmarEnvio(atendimento, interacoes, modo){
 
   if(!telefone){ toast('Informe o WhatsApp do destinatário.'); return; }
 
+  // precisa ser aberta aqui, antes do upload/gravação abaixo (que são
+  // assíncronos) — ver abrirAbaWhatsAppSincrono.
+  const winWhats = abrirAbaWhatsAppSincrono();
+
   const btn = $('#btn-confirmar-envio');
   btn.disabled = true;
 
@@ -3506,7 +3578,7 @@ async function confirmarEnvio(atendimento, interacoes, modo){
       status.textContent = 'Enviando anexo…';
       const caminho = `${atendimento.id}/${Date.now()}_${arquivo.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
       const { error: upErr } = await sb.storage.from('evidencias').upload(caminho, arquivo);
-      if(upErr){ toast('Erro ao enviar anexo: '+upErr.message); btn.disabled=false; status.textContent=''; return; }
+      if(upErr){ toast('Erro ao enviar anexo: '+upErr.message); btn.disabled=false; status.textContent=''; if(winWhats && !winWhats.closed) winWhats.close(); return; }
       const { data: pub } = sb.storage.from('evidencias').getPublicUrl(caminho);
       anexoUrl = pub.publicUrl;
       anexoNome = arquivo.name;
@@ -3526,12 +3598,13 @@ async function confirmarEnvio(atendimento, interacoes, modo){
       anexo_url: anexoUrl, anexo_nome: anexoNome
     });
 
-    mostrarConfirmacaoEnvioModal(atendimento.id, ehTransferencia ? 'Transferência registrada' : 'Histórico pronto para reenvio', resumo, telefone);
+    mostrarConfirmacaoEnvioModal(atendimento.id, ehTransferencia ? 'Transferência registrada' : 'Histórico pronto para reenvio', resumo, telefone, winWhats);
   }catch(err){
     console.error('[confirmar-envio]', err);
     toast('Erro ao registrar: '+(err?.message||err));
     btn.disabled = false;
     status.textContent = '';
+    if(winWhats && !winWhats.closed) winWhats.close();
   }
 }
 
@@ -3574,11 +3647,12 @@ function montarResumoHistorico(atendimento, interacoes, destino={}){
 }
 
 // Mostra, dentro do próprio modal de detalhe, um link garantido e
-// clicável para enviar a mensagem via WhatsApp. Não confiamos só num
-// window.open() automático depois de chamadas assíncronas — nesse
-// ponto do fluxo, o navegador frequentemente bloqueia como pop-up.
-function mostrarConfirmacaoEnvioModal(atendimentoId, titulo, mensagem, numero){
-  window.open(waLink(numero, mensagem), WA_TAB); // tentativa automática (best-effort)
+// clicável para enviar a mensagem via WhatsApp — além de navegar a aba
+// já aberta de forma síncrona lá em confirmarEnvio (ver
+// abrirAbaWhatsAppSincrono/navegarAbaWhatsApp), como reforço caso o
+// clique nesse link não seja usado.
+function mostrarConfirmacaoEnvioModal(atendimentoId, titulo, mensagem, numero, winWhats){
+  navegarAbaWhatsApp(winWhats, numero, mensagem);
   $('#modal-overlay').classList.add('active'); // garante que o modal esteja visível, mesmo vindo de um atalho fora do detalhe
   $('#modal-protocolo-label').textContent = titulo;
   $('#modal-protocolo').textContent = '+'+numero;
