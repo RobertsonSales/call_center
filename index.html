@@ -444,6 +444,7 @@
     <div class="brand-sub">Atendimento Técnico Interno</div>
     <div class="nav-item active" data-view="dashboard"><span class="ic">◆</span>Painel</div>
     <div class="nav-item" data-view="novo"><span class="ic">＋</span>Novo Atendimento</div>
+    <div class="nav-item" data-view="volume"><span class="ic">📊</span>Solicitar Volume de Testes</div>
     <div class="nav-item" data-view="atendimentos"><span class="ic">☰</span>Atendimentos Ativos</div>
     <div class="nav-item" data-view="historico"><span class="ic">⏱</span>Histórico &amp; Auditoria</div>
     <div class="nav-group-label">Configuração</div>
@@ -533,6 +534,59 @@
             <p class="hint" style="margin-bottom:10px;">A conversa continua no WhatsApp real — use o botão abaixo para ir registrando novos procedimentos e observações à medida que forem surgindo, ou para encerrar quando o caso for resolvido.</p>
             <button class="btn btn-primary btn-block" id="btn-continuar-atendimento" style="margin-bottom:10px;">Continuar atendimento (procedimentos, observações ou encerrar)</button>
             <button class="btn btn-ghost btn-block" id="btn-concluir-novo">Voltar para a lista de atendimentos</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- SOLICITAR VOLUME DE TESTES ---------- -->
+    <section class="view" id="view-volume">
+      <div class="topbar"><div><h1>Solicitar volume de testes</h1><p>Gera um protocolo e o link do WhatsApp para pedir a um colaborador da unidade o volume de testes de determinados equipamentos.</p></div></div>
+      <div class="grid-2">
+        <div class="card card-pad">
+          <div class="field"><label>Linha que envia o pedido</label>
+            <select id="vt-linha"></select>
+          </div>
+          <div class="field"><label>Unidade</label><input id="vt-unidade" placeholder="Digite para buscar na base ou informe uma nova…" autocomplete="off"/></div>
+          <div class="field"><label>Colaborador (quem vai responder)</label><input id="vt-colaborador" placeholder="Ex: Marcos Almeida — Recepção"/></div>
+          <div class="field"><label>WhatsApp do colaborador</label>
+            <div class="phone-group"><span class="phone-prefix">+55</span><input id="vt-telefone" inputmode="numeric" placeholder="(21) 98888-7777"/></div>
+          </div>
+          <div class="field">
+            <label>Equipamento(s)</label>
+            <input id="vt-equipamento" placeholder="Digite para buscar na base ou informe manualmente, separando por vírgula…" autocomplete="off"/>
+            <p class="hint" style="margin-top:6px;">Clique num resultado da lista ao lado para adicionar; pode informar mais de um separando por vírgula.</p>
+          </div>
+          <div class="field"><label>Período de referência (opcional)</label><input id="vt-periodo" placeholder="Ex: Julho/2026"/></div>
+          <div class="field"><label>Mensagem adicional (opcional)</label><textarea id="vt-mensagem" rows="2" placeholder="Ex: favor informar também eventuais equipamentos parados no período"></textarea></div>
+          <div class="hint" id="vt-catalogo-hint" style="display:none;margin-bottom:10px;"></div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary" style="flex:1;" id="btn-criar-volume">Gerar protocolo</button>
+            <button class="btn btn-ghost" id="btn-cancelar-volume">Cancelar</button>
+          </div>
+        </div>
+        <div class="card card-pad" id="volume-preview">
+          <div id="volume-form-preview">
+            <div id="vt-busca-painel" style="display:none;margin-bottom:16px;">
+              <p class="section-title" id="vt-busca-titulo" style="margin-bottom:8px;">Resultados na base</p>
+              <div id="vt-busca-resultados" style="border:1px solid var(--border);border-radius:10px;padding:8px;max-height:280px;overflow-y:auto;background:var(--bg);"></div>
+            </div>
+            <p class="section-title">Prévia da mensagem</p>
+            <p class="section-sub">Enviada ao colaborador assim que o protocolo é criado.</p>
+            <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;min-height:150px;" id="vt-preview-text">Preencha o formulário ao lado para ver a prévia…</div>
+          </div>
+          <div id="vt-confirmacao" style="display:none;">
+            <div class="ticket" style="margin-bottom:16px;">
+              <div class="row">
+                <div><div class="label">Protocolo gerado</div><div class="proto-num" id="vt-confirmacao-protocolo" style="font-size:20px;"></div></div>
+              </div>
+            </div>
+            <p class="section-title">Mensagem para o colaborador</p>
+            <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;" id="vt-confirmacao-mensagem"></div>
+            <a class="btn btn-whatsapp btn-block" id="vt-confirmacao-link" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
+            <p class="hint" style="margin-bottom:10px;">Quando o colaborador responder pelo WhatsApp com os números (e a foto/print, se houver), abra este mesmo protocolo para anexar o arquivo recebido.</p>
+            <button class="btn btn-primary btn-block" id="btn-ir-protocolo-volume" style="margin-bottom:10px;">Abrir este protocolo para anexar a resposta</button>
+            <button class="btn btn-ghost btn-block" id="btn-concluir-volume">Voltar para a lista de atendimentos</button>
           </div>
         </div>
       </div>
@@ -840,6 +894,12 @@ let chartMetricasDuracao = null;
 let catalogoSelecionado = { cliente_id: null, equipamento_id: null };
 let ultimoAtendimentoCriadoId = null;
 let clientesCache = [];
+// ---- estado da tela "Solicitar Volume de Testes" ----
+let vtSelecionado = { cliente_id: null };
+let vtEquipamentosDoClienteCache = [];
+let ultimoAtendimentoVolumeCriadoId = null;
+let timerBuscaUnidadeVolume = null;
+let timerBuscaEquipVolume = null;
 
 async function iniciarSupabase(){
   const errBox = $('#login-error');
@@ -944,30 +1004,6 @@ function waLink(numero, texto){
 // link), em vez de abrir uma aba nova a cada clique — e assim também
 // não força o agente a reconectar o WhatsApp Web de novo.
 const WA_TAB = 'labmedic_whatsapp';
-
-// O reaproveitamento por nome (acima) nem sempre é suficiente: um
-// window.open() disparado depois de um await (ex.: logo após salvar no
-// Supabase) já não conta como gesto direto do usuário para o navegador,
-// que pode bloqueá-lo ou abri-lo sem vínculo ao nome; e o próprio
-// redirecionamento do wa.me até o web.whatsapp.com pode "perder" essa
-// amarração pelo nome. Por isso guardamos a referência real da janela:
-// se ela ainda estiver aberta, só navegamos dentro dela (sem abrir
-// outra); só abrimos uma nova de fato quando a anterior foi fechada.
-let waWindowRef = null;
-function abrirWhatsApp(numero, texto){
-  const url = waLink(numero, texto);
-  if(waWindowRef && !waWindowRef.closed){
-    try{
-      waWindowRef.location.href = url;
-      waWindowRef.focus();
-      return waWindowRef;
-    }catch(err){
-      console.warn('[whatsapp] não foi possível reaproveitar a aba existente, abrindo novamente.', err);
-    }
-  }
-  waWindowRef = window.open(url, WA_TAB);
-  return waWindowRef;
-}
 
 function fmtData(iso){
   const d = new Date(iso);
@@ -1195,6 +1231,7 @@ $('#sidebar-overlay')?.addEventListener('click', fecharMenuMobile);
 // máscara de celular BR nos campos de telefone/whatsapp
 aplicarMascaraCelular($('#f-telefone'));
 aplicarMascaraCelular($('#fl-numero'));
+aplicarMascaraCelular($('#vt-telefone'));
 
 // inicializa a conexão com o Supabase assim que a página carrega
 iniciarSupabase();
@@ -1218,6 +1255,7 @@ function switchView(view){
   if(view==='catalogo') renderCatalogo();
   if(view==='categorias') renderCategorias();
   if(view==='novo'){ $('#novo-confirmacao').style.display='none'; $('#novo-form-preview').style.display='block'; }
+  if(view==='volume'){ $('#vt-confirmacao').style.display='none'; $('#volume-form-preview').style.display='block'; }
 }
 
 // Atualiza a listagem que estiver visível por trás do modal (painel,
@@ -1242,9 +1280,11 @@ async function carregarLinhas(){
   const { data, error } = await sb.from('linhas').select('*').eq('ativo', true).order('nome');
   linhasCache = data || [];
   const selNovo = $('#f-linha');
+  const selVolume = $('#vt-linha');
   const selHist = $('#fh-linha');
   const selSup = $('#fs-linha');
   selNovo.innerHTML = linhasCache.map(l=>`<option value="${l.id}">${l.nome} (${l.numero})</option>`).join('') || '<option value="">Nenhuma linha cadastrada</option>';
+  if(selVolume) selVolume.innerHTML = linhasCache.map(l=>`<option value="${l.id}">${l.nome} (${l.numero})</option>`).join('') || '<option value="">Nenhuma linha cadastrada</option>';
   selHist.innerHTML = '<option value="">Todas</option>' + linhasCache.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');
   if(selSup) selSup.innerHTML = '<option value="">Todas</option>' + linhasCache.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');
 }
@@ -2165,9 +2205,9 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
     toast('Protocolo '+data.protocolo+' criado!');
 
     // tentativa automática (pode ser bloqueada por bloqueador de pop-up,
-    // já que ocorre depois de chamadas assíncronas) — por isso o botão
-    // abaixo (com clique próprio) é o caminho garantido, não só um extra.
-    abrirWhatsApp(cliente_telefone, mensagem);
+    // já que ocorre depois de chamadas assíncronas) — por isso o link
+    // clicável abaixo é o caminho garantido, não só um extra.
+    window.open(waLink(cliente_telefone, mensagem), WA_TAB);
 
     $('#novo-form-preview').style.display = 'none';
     $('#novo-confirmacao').style.display = 'block';
@@ -2175,7 +2215,7 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
     $('#novo-confirmacao-mensagem').textContent = mensagem;
     const link = $('#novo-confirmacao-link');
     link.href = waLink(cliente_telefone, mensagem);
-    link.onclick = (e)=>{ e.preventDefault(); abrirWhatsApp(cliente_telefone, mensagem); };
+    link.target = WA_TAB;
     ultimoAtendimentoCriadoId = data.id;
 
   }catch(err){
@@ -2197,6 +2237,271 @@ $('#btn-concluir-novo').addEventListener('click', ()=>{
 $('#btn-continuar-atendimento').addEventListener('click', ()=>{
   const id = ultimoAtendimentoCriadoId;
   limparFormularioNovoAtendimento();
+  switchView('atendimentos');
+  if(id) abrirDetalhe(id);
+});
+
+// ---------------- SOLICITAR VOLUME DE TESTES ----------------
+// Reaproveita as mesmas tabelas do atendimento normal ("atendimentos" e
+// "interacoes") e o mesmo bucket de evidências: é só um tipo diferente
+// de protocolo, identificado pelo marcador no início da descrição (ver
+// ehSolicitacaoVolume). Assim ele aparece nas mesmas telas de
+// Atendimentos Ativos / Histórico / Supervisão, com um ícone 📊 para
+// diferenciar à primeira vista.
+function montarMensagemVolume(){
+  const unidade = $('#vt-unidade').value.trim();
+  const colaborador = $('#vt-colaborador').value.trim();
+  const equipamento = $('#vt-equipamento').value.replace(/,\s*$/,'').trim();
+  const periodo = $('#vt-periodo').value.trim();
+  const extra = $('#vt-mensagem').value.trim();
+  return `Olá! 👋\n\nSolicitação interna de volume de testes.\nProtocolo: (gerado ao salvar)\n${unidade?'Unidade: '+unidade+'\n':''}${colaborador?'Colaborador: '+colaborador+'\n':''}${equipamento?'Equipamento(s): '+equipamento+'\n':''}${periodo?'Período de referência: '+periodo+'\n':''}\nPor favor, nos informe o volume de testes realizados${periodo?' no período':''} pelo(s) equipamento(s) acima. Se possível, envie também o print/foto do contador ou relatório — vamos anexar aqui no protocolo assim que recebermos.${extra?'\n\n'+extra:''}`;
+}
+
+['vt-unidade','vt-colaborador','vt-equipamento','vt-periodo','vt-mensagem'].forEach(id=>{
+  $('#'+id).addEventListener('input', ()=>{ $('#vt-preview-text').textContent = montarMensagemVolume(); });
+});
+
+function esconderResultadosVolume(){
+  $('#vt-busca-painel').style.display = 'none';
+  $('#vt-busca-resultados').innerHTML = '';
+}
+
+function renderResultadosBuscaVolume(tipo, itens, tituloExtra){
+  const painel = $('#vt-busca-painel');
+  const wrap = $('#vt-busca-resultados');
+  $('#vt-busca-titulo').textContent = tituloExtra || (tipo==='cliente' ? 'Unidades encontradas na base' : 'Equipamentos encontrados na base');
+
+  if(!itens.length){
+    wrap.innerHTML = tipo==='equipamento'
+      ? '<p class="hint">Nenhum equipamento encontrado para esta unidade.</p>'
+      : '<p class="hint">Nenhum resultado encontrado.</p>';
+    painel.style.display = 'block';
+    return;
+  }
+
+  wrap.innerHTML = itens.map((item,i)=> tipo==='cliente'
+    ? `<div class="autocomplete-item" style="border-radius:8px;" data-idx="${i}">
+         <div style="font-weight:600;">${escapeHtml(item.nome)}</div>
+         ${item.cliente_grupo?`<div style="font-size:11.5px;color:var(--text-muted);">${escapeHtml(item.cliente_grupo)}</div>`:''}
+       </div>`
+    : `<div class="autocomplete-item" style="border-radius:8px;" data-idx="${i}">
+         <div style="font-weight:600;">${escapeHtml(item.nome)} ${item.categoria?`<span class="badge badge-em_andamento">${escapeHtml(item.categoria)}</span>`:''}</div>
+         <div style="font-size:11.5px;color:var(--text-muted);">${escapeHtml(item.clientes?.nome || 'sem unidade vinculada')}${item.numero_serie?' · série '+escapeHtml(item.numero_serie):''}</div>
+       </div>`
+  ).join('');
+
+  wrap.querySelectorAll('.autocomplete-item').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const item = itens[+el.dataset.idx];
+      if(tipo==='cliente') selecionarUnidadeVolume(item);
+      else adicionarEquipamentoVolume(item.nome);
+    });
+  });
+  painel.style.display = 'block';
+}
+
+function selecionarUnidadeVolume(cliente){
+  vtSelecionado.cliente_id = cliente.id;
+  $('#vt-unidade').value = cliente.nome || '';
+  // só sugere o WhatsApp cadastrado da unidade se o campo do colaborador
+  // ainda estiver vazio — o agente pode preferir informar o número
+  // pessoal de um colaborador específico em vez do telefone geral.
+  if(cliente.telefone && !$('#vt-telefone').value){
+    $('#vt-telefone').value = formatarCelularBR(cliente.telefone.replace(/^55/,''));
+  }
+  const hint = $('#vt-catalogo-hint');
+  hint.style.display = 'block';
+  hint.textContent = `✓ Unidade selecionada do catálogo: ${cliente.nome}`;
+  $('#vt-preview-text').textContent = montarMensagemVolume();
+  mostrarEquipamentosDoClienteVolume(cliente.id, cliente.nome);
+}
+
+async function mostrarEquipamentosDoClienteVolume(clienteId, nomeCliente){
+  const painel = $('#vt-busca-painel');
+  const wrap = $('#vt-busca-resultados');
+  $('#vt-busca-titulo').textContent = `Equipamentos de ${nomeCliente || 'unidade selecionada'}`;
+  wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Buscando equipamentos desta unidade…</div>';
+  painel.style.display = 'block';
+
+  const { data, error } = await sb.from('equipamentos')
+    .select('*, clientes(id, nome)').eq('cliente_id', clienteId).eq('ativo', true).order('nome').limit(200);
+
+  if(error){
+    console.error('[equipamentos-por-cliente-volume]', error);
+    wrap.innerHTML = '<p class="hint">Erro ao buscar equipamentos: '+error.message+'</p>';
+    return;
+  }
+
+  vtEquipamentosDoClienteCache = data || [];
+  renderResultadosBuscaVolume('equipamento', vtEquipamentosDoClienteCache, `Equipamentos de ${nomeCliente || 'unidade selecionada'} — clique para adicionar`);
+}
+
+$('#vt-unidade').addEventListener('input', ()=>{
+  clearTimeout(timerBuscaUnidadeVolume);
+  const q = $('#vt-unidade').value.trim();
+  if(!q){ vtSelecionado.cliente_id = null; esconderResultadosVolume(); return; }
+  timerBuscaUnidadeVolume = setTimeout(async ()=>{
+    await garantirClientesCacheNovo(); // reaproveita o mesmo cache de clientes da tela Novo Atendimento
+    const alvo = normalizarTexto(q);
+    const filtrados = clientesCache.filter(c =>
+      normalizarTexto(c.nome).includes(alvo) || normalizarTexto(c.cliente_grupo).includes(alvo)
+    ).slice(0,8);
+    renderResultadosBuscaVolume('cliente', filtrados);
+  }, 200);
+});
+
+$('#vt-unidade').addEventListener('blur', ()=>{
+  setTimeout(async ()=>{
+    const texto = $('#vt-unidade').value.trim();
+    if(!texto) return;
+    await garantirClientesCacheNovo();
+    const alvo = normalizarTexto(texto);
+    const match = clientesCache.find(c => normalizarTexto(c.nome) === alvo);
+    if(match) selecionarUnidadeVolume(match);
+  }, 200);
+});
+
+$('#vt-equipamento').addEventListener('focus', ()=>{
+  if(vtSelecionado.cliente_id) mostrarEquipamentosDoClienteVolume(vtSelecionado.cliente_id, $('#vt-unidade').value.trim());
+});
+
+$('#vt-equipamento').addEventListener('input', ()=>{
+  clearTimeout(timerBuscaEquipVolume);
+  // a busca sempre considera o último termo depois da última vírgula,
+  // já que o campo aceita vários equipamentos separados por vírgula
+  const partes = $('#vt-equipamento').value.split(',');
+  const termoAtual = partes[partes.length-1].trim();
+
+  if(vtSelecionado.cliente_id){
+    if(!termoAtual){ renderResultadosBuscaVolume('equipamento', vtEquipamentosDoClienteCache, `Equipamentos de ${$('#vt-unidade').value.trim()}`); return; }
+    const alvo = normalizarTexto(termoAtual);
+    const filtrados = vtEquipamentosDoClienteCache.filter(e =>
+      normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo)
+    );
+    renderResultadosBuscaVolume('equipamento', filtrados, `Equipamentos de ${$('#vt-unidade').value.trim()}`);
+    return;
+  }
+
+  if(termoAtual.length < 2){ esconderResultadosVolume(); return; }
+  timerBuscaEquipVolume = setTimeout(async ()=>{
+    const { data } = await sb.from('equipamentos').select('*, clientes(id, nome)').eq('ativo', true)
+      .ilike('nome', `%${termoAtual}%`).limit(20);
+    const alvo = normalizarTexto(termoAtual);
+    const filtrados = (data||[]).filter(e => normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo));
+    renderResultadosBuscaVolume('equipamento', filtrados.length ? filtrados : (data||[]));
+  }, 280);
+});
+
+// clicar num resultado da busca substitui o termo parcial que o agente
+// estava digitando (depois da última vírgula) pelo nome escolhido, e já
+// deixa uma vírgula pronta para adicionar o próximo equipamento
+function adicionarEquipamentoVolume(nome){
+  const campo = $('#vt-equipamento');
+  let partes = campo.value.split(',').map(p=>p.trim()).filter(Boolean);
+  if(partes.length && campo.value.trim() && !campo.value.trim().endsWith(',')){
+    partes.pop();
+  }
+  if(!partes.some(p => normalizarTexto(p) === normalizarTexto(nome))) partes.push(nome);
+  campo.value = partes.join(', ') + ', ';
+  $('#vt-preview-text').textContent = montarMensagemVolume();
+  campo.focus();
+}
+
+function limparFormularioVolume(){
+  $('#vt-unidade').value=''; $('#vt-colaborador').value=''; $('#vt-telefone').value='';
+  $('#vt-equipamento').value=''; $('#vt-periodo').value=''; $('#vt-mensagem').value='';
+  $('#vt-preview-text').textContent = 'Preencha o formulário ao lado para ver a prévia…';
+  $('#vt-catalogo-hint').style.display = 'none';
+  esconderResultadosVolume();
+  vtSelecionado = { cliente_id: null };
+  $('#vt-confirmacao').style.display = 'none';
+  $('#volume-form-preview').style.display = 'block';
+  ultimoAtendimentoVolumeCriadoId = null;
+}
+
+$('#btn-cancelar-volume').addEventListener('click', ()=>{
+  limparFormularioVolume();
+  switchView('dashboard');
+});
+
+$('#btn-criar-volume').addEventListener('click', async ()=>{
+  const linha_id = $('#vt-linha').value;
+  const unidade = $('#vt-unidade').value.trim();
+  const colaborador = $('#vt-colaborador').value.trim();
+  const telefone = comDDI55($('#vt-telefone').value);
+  const equipamento = $('#vt-equipamento').value.replace(/,\s*$/,'').trim();
+  const periodo = $('#vt-periodo').value.trim();
+  const mensagemExtra = $('#vt-mensagem').value.trim();
+
+  if(!linha_id){ toast('Cadastre e selecione uma linha primeiro.'); return; }
+  if(!unidade || !telefone){ toast('Informe a unidade e o WhatsApp do colaborador.'); return; }
+  if(!colaborador){ toast('Informe o nome do colaborador que vai responder.'); return; }
+
+  const btn = $('#btn-criar-volume');
+  btn.disabled = true; btn.textContent = 'Gerando…';
+
+  try{
+    // marcador usado só para identificar este tipo de protocolo depois
+    // (ver ehSolicitacaoVolume) — não muda o formato do número do
+    // protocolo em si, que continua vindo do mesmo gerador da tabela.
+    const marcador = '[Solicitação de volume de testes]';
+    const descricao = marcador + (periodo ? ' — período: '+periodo : '') + (mensagemExtra ? '\n'+mensagemExtra : '');
+
+    // só vincula equipamento_id quando exatamente um equipamento do
+    // catálogo daquela unidade foi informado — com vários, listados por
+    // vírgula, fica só no texto livre do campo "equipamento"
+    const equipamentoIdCorrespondente = (!equipamento.includes(',') && vtSelecionado.cliente_id)
+      ? (vtEquipamentosDoClienteCache.find(e => normalizarTexto(e.nome) === normalizarTexto(equipamento))?.id || null)
+      : null;
+
+    const { data, error } = await sb.from('atendimentos').insert({
+      linha_id, cliente_nome: unidade, cliente_grupo: 'Colaborador: '+colaborador, cliente_telefone: telefone,
+      equipamento: equipamento || null, descricao_problema: descricao,
+      cliente_id: vtSelecionado.cliente_id, equipamento_id: equipamentoIdCorrespondente,
+      status: 'aberto', agente_id: currentAgente.id
+    }).select().single();
+
+    if(error){ toast('Erro ao criar solicitação: '+error.message); return; }
+
+    const mensagem = `Olá! 👋\n\nSolicitação interna de volume de testes.\nProtocolo: ${data.protocolo}\nUnidade: ${unidade}\nColaborador: ${colaborador}\n${equipamento?'Equipamento(s): '+equipamento+'\n':''}${periodo?'Período de referência: '+periodo+'\n':''}\nPor favor, nos informe o volume de testes realizados${periodo?' no período':''} pelo(s) equipamento(s) acima. Se possível, envie também o print/foto do contador ou relatório — vamos anexar aqui no protocolo assim que recebermos.${mensagemExtra?'\n\n'+mensagemExtra:''}`;
+
+    await sb.from('interacoes').insert({
+      atendimento_id: data.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: mensagem,
+      destinatario_telefone: telefone, destinatario_nome: colaborador
+    });
+
+    toast('Protocolo '+data.protocolo+' criado!');
+
+    // tentativa automática (pode ser bloqueada por bloqueador de pop-up)
+    // — o link clicável na confirmação abaixo é o caminho garantido.
+    window.open(waLink(telefone, mensagem), WA_TAB);
+
+    $('#volume-form-preview').style.display = 'none';
+    $('#vt-confirmacao').style.display = 'block';
+    $('#vt-confirmacao-protocolo').textContent = data.protocolo;
+    $('#vt-confirmacao-mensagem').textContent = mensagem;
+    const link = $('#vt-confirmacao-link');
+    link.href = waLink(telefone, mensagem);
+    link.target = WA_TAB;
+    ultimoAtendimentoVolumeCriadoId = data.id;
+
+  }catch(err){
+    console.error('[criar-volume] erro inesperado:', err);
+    toast('Erro inesperado ao criar solicitação: '+(err?.message || err));
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Gerar protocolo';
+  }
+});
+
+$('#btn-concluir-volume').addEventListener('click', ()=>{
+  limparFormularioVolume();
+  switchView('atendimentos');
+});
+
+$('#btn-ir-protocolo-volume').addEventListener('click', ()=>{
+  const id = ultimoAtendimentoVolumeCriadoId;
+  limparFormularioVolume();
   switchView('atendimentos');
   if(id) abrirDetalhe(id);
 });
@@ -2247,6 +2552,12 @@ function calcDuracao(inicio, fim){
   return fim ? texto : texto + ' (em andamento)';
 }
 
+// identifica os protocolos criados pela tela "Solicitar Volume de Testes"
+// (mesma tabela "atendimentos" — o marcador fica no início da descrição)
+function ehSolicitacaoVolume(a){
+  return !!(a.descricao_problema && a.descricao_problema.startsWith('[Solicitação de volume de testes]'));
+}
+
 function tabelaAtendimentos(lista, opts={}){
   const mostrarAgente = !!opts.mostrarAgente;
   const mostrarReenviar = !!opts.mostrarReenviar;
@@ -2255,7 +2566,7 @@ function tabelaAtendimentos(lista, opts={}){
     </tr></thead><tbody>
     ${lista.map(a=>`
       <tr data-id="${a.id}">
-        <td class="mono" style="font-weight:600;">${a.protocolo}</td>
+        <td class="mono" style="font-weight:600;">${ehSolicitacaoVolume(a)?'<span title="Solicitação de volume de testes" style="margin-right:4px;">📊</span>':''}${a.protocolo}</td>
         <td>${a.cliente_nome}</td>
         <td>${a.linhas?.nome || '—'}</td>
         ${mostrarAgente?`<td>${a.agentes?.nome || '—'}</td>`:''}
@@ -2945,7 +3256,7 @@ async function abrirDetalhe(id){
     </div>` : ''}
 
     <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
-      <a class="btn btn-whatsapp btn-sm" id="btn-abrir-whatsapp-cliente" href="${waLink(atendimento.cliente_telefone,'Olá '+atendimento.cliente_nome+', tudo bem? Sobre o protocolo '+atendimento.protocolo+': ')}">Abrir WhatsApp do cliente</a>
+      <a class="btn btn-whatsapp btn-sm" target="${WA_TAB}" href="${waLink(atendimento.cliente_telefone,'Olá '+atendimento.cliente_nome+', tudo bem? Sobre o protocolo '+atendimento.protocolo+': ')}">Abrir WhatsApp do cliente</a>
       ${atendimento.status!=='encerrado' ? `<button class="btn btn-ghost btn-sm" id="btn-encerrar">Encerrar atendimento</button>`:''}
       <button class="btn btn-ghost btn-sm" id="btn-transferir">Transferir / reenviar histórico</button>
       <button class="btn btn-ghost btn-sm" id="btn-visualizar-pdf-protocolo">👁 Visualizar PDF</button>
@@ -2966,6 +3277,14 @@ async function abrirDetalhe(id){
       <button class="btn btn-ghost btn-sm" id="btn-salvar-observacao">Salvar observação</button>
     </div>
 
+    <p class="section-title" style="margin-bottom:10px;">Anexar arquivo recebido</p>
+    <p class="hint" style="margin:-4px 0 8px;">Para anexar um print, foto ou documento que o colaborador/cliente enviou pelo WhatsApp real (ex: volume de testes solicitado) — fica disponível para download aqui no protocolo.</p>
+    <div class="field"><textarea id="nova-anexo-legenda" rows="2" placeholder="Ex: print do volume de testes enviado pelo colaborador da unidade."></textarea></div>
+    <div class="field"><input type="file" id="nova-anexo-arquivo" accept="image/*,.pdf"/></div>
+    <div style="display:flex;gap:8px;margin-bottom:22px;">
+      <button class="btn btn-ghost btn-sm" id="btn-salvar-anexo">Salvar anexo</button>
+    </div>
+
     <p class="section-title" style="margin-bottom:10px;">Histórico do protocolo</p>
     <div id="lista-interacoes">${listaInteracoes}</div>
   `;
@@ -2973,12 +3292,9 @@ async function abrirDetalhe(id){
   $('#btn-salvar-interacao').addEventListener('click', ()=> salvarInteracao(atendimento, false));
   $('#btn-salvar-enviar').addEventListener('click', ()=> salvarInteracao(atendimento, true));
   $('#btn-salvar-observacao').addEventListener('click', ()=> salvarObservacaoCliente(atendimento));
+  $('#btn-salvar-anexo').addEventListener('click', ()=> salvarAnexoRecebido(atendimento));
   const btnEnc = $('#btn-encerrar');
   if(btnEnc) btnEnc.addEventListener('click', ()=> encerrarAtendimento(atendimento));
-  $('#btn-abrir-whatsapp-cliente').addEventListener('click', (e)=>{
-    e.preventDefault();
-    abrirWhatsApp(atendimento.cliente_telefone, 'Olá '+atendimento.cliente_nome+', tudo bem? Sobre o protocolo '+atendimento.protocolo+': ');
-  });
   $('#btn-transferir').addEventListener('click', ()=> abrirTransferencia(atendimento, interacoes||[]));
   $('#btn-visualizar-pdf-protocolo').addEventListener('click', ()=> exportarProtocoloPDF(atendimento, interacoes||[], 'view'));
   $('#btn-exportar-pdf-protocolo').addEventListener('click', ()=> exportarProtocoloPDF(atendimento, interacoes||[], 'download'));
@@ -3021,11 +3337,45 @@ async function salvarInteracao(atendimento, enviarWhatsapp){
   }
 
   if(enviarWhatsapp){
-    abrirWhatsApp(atendimento.cliente_telefone, texto);
+    window.open(waLink(atendimento.cliente_telefone, texto), WA_TAB);
   }
   toast('Procedimento registrado.');
   abrirDetalhe(atendimento.id);
   atualizarListaAtivaEmSegundoPlano();
+}
+
+// Anexa um arquivo (ex: print/foto enviado pelo colaborador ou cliente no
+// WhatsApp real) a qualquer protocolo — mesmo bucket "evidencias" e mesmas
+// colunas anexo_url/anexo_nome já usados no fluxo de transferir/reenviar.
+async function salvarAnexoRecebido(atendimento){
+  const arquivo = $('#nova-anexo-arquivo').files[0];
+  const legenda = $('#nova-anexo-legenda').value.trim();
+  if(!arquivo){ toast('Selecione um arquivo antes de salvar.'); return; }
+
+  const btn = $('#btn-salvar-anexo');
+  btn.disabled = true; btn.textContent = 'Enviando…';
+
+  try{
+    const caminho = `${atendimento.id}/${Date.now()}_${arquivo.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+    const { error: upErr } = await sb.storage.from('evidencias').upload(caminho, arquivo);
+    if(upErr){ toast('Erro ao enviar anexo: '+upErr.message); return; }
+    const { data: pub } = sb.storage.from('evidencias').getPublicUrl(caminho);
+
+    await sb.from('interacoes').insert({
+      atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'anexo',
+      conteudo: legenda || 'Arquivo recebido anexado ao protocolo.',
+      anexo_url: pub.publicUrl, anexo_nome: arquivo.name
+    });
+
+    toast('Anexo salvo.');
+    abrirDetalhe(atendimento.id);
+  }catch(err){
+    console.error('[salvar-anexo]', err);
+    toast('Erro ao salvar anexo: '+(err?.message||err));
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Salvar anexo';
+  }
 }
 
 async function salvarObservacaoCliente(atendimento){
@@ -3228,7 +3578,7 @@ function montarResumoHistorico(atendimento, interacoes, destino={}){
 // window.open() automático depois de chamadas assíncronas — nesse
 // ponto do fluxo, o navegador frequentemente bloqueia como pop-up.
 function mostrarConfirmacaoEnvioModal(atendimentoId, titulo, mensagem, numero){
-  abrirWhatsApp(numero, mensagem); // tentativa automática (best-effort)
+  window.open(waLink(numero, mensagem), WA_TAB); // tentativa automática (best-effort)
   $('#modal-overlay').classList.add('active'); // garante que o modal esteja visível, mesmo vindo de um atalho fora do detalhe
   $('#modal-protocolo-label').textContent = titulo;
   $('#modal-protocolo').textContent = '+'+numero;
@@ -3238,10 +3588,9 @@ function mostrarConfirmacaoEnvioModal(atendimentoId, titulo, mensagem, numero){
     </div>
     <p class="section-title">Mensagem</p>
     <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;max-height:320px;overflow-y:auto;">${escapeHtml(mensagem)}</div>
-    <a class="btn btn-whatsapp btn-block" id="btn-abrir-whatsapp-envio" href="${waLink(numero, mensagem)}" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
+    <a class="btn btn-whatsapp btn-block" href="${waLink(numero, mensagem)}" target="${WA_TAB}" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
     <button class="btn btn-ghost btn-block" id="btn-voltar-detalhe-modal">Voltar ao protocolo</button>
   `;
-  $('#btn-abrir-whatsapp-envio').addEventListener('click', (e)=>{ e.preventDefault(); abrirWhatsApp(numero, mensagem); });
   $('#btn-voltar-detalhe-modal').addEventListener('click', ()=> abrirDetalhe(atendimentoId));
   toast('Pronto — clique no botão para abrir o WhatsApp.');
   atualizarListaAtivaEmSegundoPlano();
