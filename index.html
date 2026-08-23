@@ -552,7 +552,8 @@
             </div>
             <p class="section-title">Mensagem para o cliente</p>
             <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;" id="novo-confirmacao-mensagem"></div>
-            <a class="btn btn-whatsapp btn-block" id="novo-confirmacao-link" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar ao cliente</a>
+            <a class="btn btn-whatsapp btn-block" id="novo-confirmacao-link" target="labmedic_whatsapp" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar ao cliente</a>
+            <button class="btn btn-ghost btn-block" id="novo-confirmacao-pdf" style="margin-bottom:10px;">🧾 Gerar PDF do protocolo (A6)</button>
             <p class="hint" style="margin-bottom:10px;">A conversa continua no WhatsApp real — use o botão abaixo para ir registrando novos procedimentos e observações à medida que forem surgindo, ou para encerrar quando o caso for resolvido.</p>
             <button class="btn btn-primary btn-block" id="btn-continuar-atendimento" style="margin-bottom:10px;">Continuar atendimento (procedimentos, observações ou encerrar)</button>
             <button class="btn btn-ghost btn-block" id="btn-concluir-novo">Voltar para a lista de atendimentos</button>
@@ -605,7 +606,8 @@
             </div>
             <p class="section-title">Mensagem para o colaborador</p>
             <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;" id="vt-confirmacao-mensagem"></div>
-            <a class="btn btn-whatsapp btn-block" id="vt-confirmacao-link" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
+            <a class="btn btn-whatsapp btn-block" id="vt-confirmacao-link" target="labmedic_whatsapp" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
+            <button class="btn btn-ghost btn-block" id="vt-confirmacao-pdf" style="margin-bottom:10px;">🧾 Gerar PDF do protocolo (A6)</button>
             <p class="hint" style="margin-bottom:10px;">Quando o colaborador responder pelo WhatsApp com os números (e a foto/print, se houver), abra este mesmo protocolo para anexar o arquivo recebido.</p>
             <button class="btn btn-primary btn-block" id="btn-ir-protocolo-volume" style="margin-bottom:10px;">Abrir este protocolo para anexar a resposta</button>
             <button class="btn btn-ghost btn-block" id="btn-concluir-volume">Voltar para a lista de atendimentos</button>
@@ -1027,35 +1029,66 @@ function waLink(numero, texto){
 // não força o agente a reconectar o WhatsApp Web de novo.
 const WA_TAB = 'labmedic_whatsapp';
 
-// Abre (ou reaproveita) a aba nomeada do WhatsApp de forma SÍNCRONA, ainda
-// dentro da própria função do clique do usuário, antes de qualquer await.
-// É essa sincronia que faz o navegador reconhecer a chamada como resultado
-// direto de um clique — sem isso (ex: chamando window.open só depois de um
-// await de upload/insert no banco), a maioria dos navegadores deixa de
-// considerar "ação do usuário" e passa a abrir uma aba/janela nova a cada
-// clique em vez de reaproveitar a mesma, mesmo com o mesmo nome de destino.
-// Uso: capturar a referência no início do handler (ex: no clique do botão),
-// e só navegar essa referência (via winWhats.location.href = ...) depois
-// que os dados assíncronos estiverem prontos.
+// Referência viva da aba/janela do WhatsApp aberta por esta sessão.
+// Só passar o mesmo `name` para window.open() não basta: quando a
+// chamada acontece depois de um await (ou quando o navegador considera
+// que a janela anterior "perdeu" o vínculo), alguns navegadores abrem
+// uma janela nova. Guardando a referência, reaproveitamos SEMPRE a
+// mesma aba enquanto ela existir — só navegando e focando.
+let waWinRef = null;
+
+function waTabViva(){
+  try{ return !!(waWinRef && !waWinRef.closed); }catch(_){ return false; }
+}
+
+// Abre (ou reaproveita) a aba do WhatsApp de forma SÍNCRONA, ainda dentro
+// do handler do clique — antes de qualquer await de upload/insert.
 function abrirAbaWhatsAppSincrono(){
   try{
-    return window.open('', WA_TAB);
+    if(waTabViva()){
+      try{ waWinRef.focus(); }catch(_){}
+      return waWinRef;
+    }
+    waWinRef = window.open('', WA_TAB);
+    return waWinRef;
   }catch(err){
-    console.warn('[whatsapp] não foi possível abrir a aba antecipadamente:', err);
+    console.warn('[whatsapp] não foi possível abrir/reaproveitar a aba:', err);
     return null;
   }
 }
-// navega a aba já aberta para o link do WhatsApp; se por algum motivo a
-// referência não existir mais (aba fechada pelo usuário, bloqueador etc.),
-// cai de volta no window.open normal como último recurso.
-function navegarAbaWhatsApp(winWhats, numero, texto){
-  const url = waLink(numero, texto);
-  if(winWhats && !winWhats.closed){
-    winWhats.location.href = url;
-  }else{
-    window.open(url, WA_TAB);
+
+// Ponto único de saída para o WhatsApp: navega a aba existente; só abre
+// uma nova quando realmente não houver nenhuma.
+function abrirWhatsAppURL(url, winPreAberta){
+  const alvo = (winPreAberta && !winPreAberta.closed) ? winPreAberta : (waTabViva() ? waWinRef : null);
+  if(alvo){
+    waWinRef = alvo;
+    try{
+      alvo.location.href = url;
+      alvo.focus();
+      return alvo;
+    }catch(err){
+      console.warn('[whatsapp] falha ao navegar a aba existente:', err);
+    }
   }
+  waWinRef = window.open(url, WA_TAB);
+  if(!waWinRef) window.location.href = url; // pop-up bloqueado: último recurso
+  return waWinRef;
 }
+
+function navegarAbaWhatsApp(winWhats, numero, texto){
+  abrirWhatsAppURL(waLink(numero, texto), winWhats);
+}
+
+// Qualquer link do app que aponte para a aba do WhatsApp passa pelo
+// mesmo controle — sem isso, o clique no <a target="..."> podia abrir
+// uma janela nova em vez de reusar a sessão já aberta.
+document.addEventListener('click', (ev)=>{
+  const a = ev.target.closest && ev.target.closest('a[target="'+WA_TAB+'"]');
+  if(!a || !a.href) return;
+  ev.preventDefault();
+  abrirWhatsAppURL(a.href);
+});
 
 function fmtData(iso){
   const d = new Date(iso);
@@ -3254,6 +3287,129 @@ async function exportarProtocoloPDF(atendimento, interacoes, modo='download'){
   abrirOuSalvarPDF(doc, 'protocolo_' + atendimento.protocolo.toLowerCase() + '.pdf', modo);
 }
 
+
+// ---------------- PDF A6 (mensagem do protocolo) ----------------
+// Versão impressa/compartilhável da mensagem enviada ao cliente, em
+// A6 retrato (105 x 148 mm): faixa institucional, ticket do protocolo,
+// corpo da mensagem com quebra automática e paginação, e rodapé.
+function limparMarkdownWhats(txt){
+  return (txt||'')
+    // as fontes padrão do PDF não têm emoji: sem remover, saem como
+    // caracteres quebrados no documento impresso
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu, '')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/_(.+?)_/g, '$1')
+    .replace(/~(.+?)~/g, '$1')
+    .replace(/[ \t]+$/gm, '');
+}
+
+function gerarProtocoloPDFA6({ protocolo, titulo, mensagem, destinatario, modo = 'view' }){
+  if(!window.jspdf){ toast('Gerador de PDF ainda carregando — tente novamente.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a6' });
+  const W = doc.internal.pageSize.getWidth();   // 105
+  const H = doc.internal.pageSize.getHeight();  // 148
+  const M = 9;                                   // margem
+  const VERDE = [15, 110, 99];
+  const VERDE_ESC = [11, 81, 72];
+
+  function cabecalho(){
+    doc.setFillColor.apply(doc, VERDE);
+    doc.rect(0, 0, W, 17, 'F');
+    doc.setTextColor(255,255,255);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(11);
+    doc.text('GRUPO LABMEDIC', M, 7.5);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(6.5);
+    doc.text('Sistema de Atendimento Técnico Interno', M, 12.5);
+    doc.setTextColor(20,20,20);
+  }
+  function rodape(pag){
+    doc.setDrawColor(225,231,237);
+    doc.setLineWidth(0.3);
+    doc.line(M, H-11, W-M, H-11);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(6);
+    doc.setTextColor(120,130,145);
+    doc.text('Documento gerado em ' + new Date().toLocaleString('pt-BR'), M, H-7);
+    doc.text('pág. ' + pag, W-M, H-7, { align:'right' });
+    doc.setTextColor(20,20,20);
+  }
+
+  let pagina = 1;
+  cabecalho();
+  let y = 23;
+
+  // ticket do protocolo
+  doc.setFillColor.apply(doc, VERDE_ESC);
+  doc.roundedRect(M, y, W-M*2, 15, 2, 2, 'F');
+  doc.setTextColor(255,255,255);
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(6.5);
+  doc.text((titulo || 'Protocolo de atendimento').toUpperCase(), M+4, y+5.5);
+  doc.setFont('courier','bold');
+  doc.setFontSize(12);
+  doc.text(protocolo || '—', M+4, y+11.5);
+  doc.setTextColor(20,20,20);
+  y += 21;
+
+  if(destinatario){
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(7);
+    doc.text('Destinatário', M, y);
+    doc.setFont('helvetica','normal');
+    doc.setTextColor(60,72,88);
+    const dest = doc.splitTextToSize(destinatario, W-M*2);
+    doc.text(dest, M, y+3.8);
+    doc.setTextColor(20,20,20);
+    y += 3.8 + dest.length*3.4 + 3;
+  }
+
+  doc.setDrawColor(225,231,237);
+  doc.line(M, y, W-M, y);
+  y += 5;
+
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(7.5);
+  doc.text('Mensagem', M, y);
+  y += 4.5;
+
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(8);
+  const limiteY = H - 15;
+  limparMarkdownWhats(mensagem).split('\n').forEach(par=>{
+    if(par.trim() === ''){ y += 2.4; return; }
+    doc.splitTextToSize(par, W-M*2).forEach(linha=>{
+      if(y > limiteY){
+        rodape(pagina); doc.addPage(); pagina++; cabecalho();
+        y = 23; doc.setFont('helvetica','normal'); doc.setFontSize(8);
+      }
+      doc.text(linha, M, y);
+      y += 4.1;
+    });
+  });
+
+  rodape(pagina);
+  const nome = 'protocolo_' + String(protocolo || 'labmedic').toLowerCase().replace(/[^a-z0-9]+/g,'_') + '_a6.pdf';
+  abrirOuSalvarPDF(doc, nome, modo);
+}
+
+$('#novo-confirmacao-pdf')?.addEventListener('click', ()=>{
+  gerarProtocoloPDFA6({
+    protocolo: $('#novo-confirmacao-protocolo').textContent.trim(),
+    titulo: 'Atendimento técnico',
+    mensagem: $('#novo-confirmacao-mensagem').textContent
+  });
+});
+$('#vt-confirmacao-pdf')?.addEventListener('click', ()=>{
+  gerarProtocoloPDFA6({
+    protocolo: $('#vt-confirmacao-protocolo').textContent.trim(),
+    titulo: 'Solicitação de volume de testes',
+    mensagem: $('#vt-confirmacao-mensagem').textContent
+  });
+});
+
 // ---------------- DETALHE / MODAL ----------------
 let atendimentoAtualId = null;
 
@@ -3663,8 +3819,17 @@ function mostrarConfirmacaoEnvioModal(atendimentoId, titulo, mensagem, numero, w
     <p class="section-title">Mensagem</p>
     <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;max-height:320px;overflow-y:auto;">${escapeHtml(mensagem)}</div>
     <a class="btn btn-whatsapp btn-block" href="${waLink(numero, mensagem)}" target="${WA_TAB}" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
+    <button class="btn btn-ghost btn-block" id="btn-pdf-a6-envio" style="margin-bottom:10px;">🧾 Gerar PDF do protocolo (A6)</button>
     <button class="btn btn-ghost btn-block" id="btn-voltar-detalhe-modal">Voltar ao protocolo</button>
   `;
+  $('#btn-pdf-a6-envio')?.addEventListener('click', ()=>{
+    gerarProtocoloPDFA6({
+      protocolo: (mensagem.match(/Protocolo:\*?\s*([^\n]+)/)||[])[1]?.trim() || '',
+      titulo: titulo,
+      destinatario: '+' + numero,
+      mensagem: mensagem
+    });
+  });
   $('#btn-voltar-detalhe-modal').addEventListener('click', ()=> abrirDetalhe(atendimentoId));
   toast('Pronto — clique no botão para abrir o WhatsApp.');
   atualizarListaAtivaEmSegundoPlano();
