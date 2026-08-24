@@ -2405,7 +2405,7 @@ function renderResultadosBuscaVolume(tipo, itens, tituloExtra){
     el.addEventListener('click', ()=>{
       const item = itens[+el.dataset.idx];
       if(tipo==='cliente') selecionarUnidadeVolume(item);
-      else adicionarEquipamentoVolume(item.nome);
+      else adicionarEquipamentoVolume(item);
     });
   });
   painel.style.display = 'block';
@@ -2506,13 +2506,16 @@ $('#vt-equipamento').addEventListener('input', ()=>{
 // clicar num resultado da busca substitui o termo parcial que o agente
 // estava digitando (depois da última vírgula) pelo nome escolhido, e já
 // deixa uma vírgula pronta para adicionar o próximo equipamento
-function adicionarEquipamentoVolume(nome){
+function adicionarEquipamentoVolume(equip){
   const campo = $('#vt-equipamento');
   let partes = campo.value.split(',').map(p=>p.trim()).filter(Boolean);
   if(partes.length && campo.value.trim() && !campo.value.trim().endsWith(',')){
     partes.pop();
   }
-  if(!partes.some(p => normalizarTexto(p) === normalizarTexto(nome))) partes.push(nome);
+  const nome = equip?.nome || equip;
+  const serie = equip?.numero_serie;
+  const texto = serie ? `${nome} (série: ${serie})` : nome;
+  if(!partes.some(p => normalizarTexto(p) === normalizarTexto(texto))) partes.push(texto);
   campo.value = partes.join(', ') + ', ';
   $('#vt-preview-text').textContent = montarMensagemVolume();
   campo.focus();
