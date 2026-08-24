@@ -1018,9 +1018,20 @@ function comDDI55(valorMascarado){
   return d; // já veio com DDI, ou está incompleto — mantém como está
 }
 
+// Em desktop apontamos DIRETO para web.whatsapp.com/send: o wa.me abre
+// uma página intermediária ("Continuar para o chat") que, ao ser clicada,
+// abre o WhatsApp Web numa ABA NOVA — era a causa real da aba duplicada
+// mesmo com a sessão já aberta. Em celular mantemos o wa.me, que é quem
+// consegue acionar o aplicativo nativo.
+const ehMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(navigator.userAgent);
+
 function waLink(numero, texto){
-  return `https://wa.me/${soDigitos(numero)}?text=${encodeURIComponent(texto)}`;
+  const n = soDigitos(numero), t = encodeURIComponent(texto);
+  return ehMobile
+    ? `https://wa.me/${n}?text=${t}`
+    : `https://web.whatsapp.com/send?phone=${n}&text=${t}&type=phone_number&app_absent=0`;
 }
+
 
 // Nome fixo de "janela" usado em todo envio ao WhatsApp: passar sempre
 // o mesmo nome para window.open()/target faz o navegador reaproveitar
@@ -3141,6 +3152,34 @@ const STATUS_LABEL = {aberto:'Aberto', em_andamento:'Em andamento', transferido:
 // aplicação — faixa colorida com o nome do sistema, mais um subtítulo
 // (título do documento) alinhado à direita. Devolve a posição Y livre
 // para o conteúdo começar, já abaixo da faixa.
+// ---------------- SANITIZAÇÃO DE TEXTO PARA PDF ----------------
+// As fontes padrão do jsPDF (Helvetica/Courier) só suportam WinAnsi:
+// emojis e símbolos fora dessa tabela saíam como lixo ("Ø=ÜK"). Aqui
+// trocamos os símbolos mais comuns por equivalentes legíveis e
+// removemos o restante.
+const PDF_SUBST = {
+  '\u2013':'-', '\u2014':'-', '\u2018':"'", '\u2019':"'",
+  '\u201c':'"', '\u201d':'"', '\u2026':'...', '\u2022':'-',
+  '\u00a0':' ', '\u2192':'->', '\u2190':'<-', '\u2705':'[OK]',
+  '\u274c':'[X]', '\u26a0':'[!]', '\u2713':'[OK]', '\u00b7':'-'
+};
+function pdfSafe(txt){
+  if(txt === null || txt === undefined) return '';
+  let out = String(txt);
+  // remove seletores de variação/ZWJ e bandeiras/skin tones
+  out = out.replace(/[\uFE0E\uFE0F\u200D]/g, '');
+  out = out.replace(/[\u{1F000}-\u{1FAFF}\u{1F1E6}-\u{1F1FF}]/gu, '');
+  out = out.replace(/[\s\S]/gu, ch => {
+    if(PDF_SUBST[ch] !== undefined) return PDF_SUBST[ch];
+    const c = ch.codePointAt(0);
+    if(c === 10 || c === 13 || c === 9) return ch;
+    if(c >= 32 && c <= 126) return ch;
+    if(c >= 160 && c <= 255) return ch;   // acentuação latina
+    return '';
+  });
+  return out.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+$/gm, '');
+}
+
 function desenharCabecalhoPDF(doc, subtitulo){
   const largura = doc.internal.pageSize.getWidth();
   doc.setFillColor(15, 110, 99);
@@ -3222,7 +3261,7 @@ function exportarPDF(dados, titulo, comAgente, modo='download'){
     const row = [a.protocolo, a.cliente_nome, '+'+a.cliente_telefone, a.linhas?.nome || '—'];
     if(comAgente) row.push(a.agentes?.nome || '—');
     row.push(STATUS_LABEL[a.status] || a.status, fmtData(a.criado_em), calcDuracao(a.criado_em, a.encerrado_em));
-    return row;
+    return row.map(pdfSafe);
   });
 
   doc.autoTable({
@@ -3265,7 +3304,7 @@ async function exportarProtocoloPDF(atendimento, interacoes, modo='download'){
   ];
   doc.autoTable({
     startY: y0+12, theme:'plain', styles:{ fontSize: 9, cellPadding: 2 },
-    body: infoLinhas, columnStyles: { 0:{ fontStyle:'bold', cellWidth: 45 } }
+    body: infoLinhas.map(l => l.map(pdfSafe)), columnStyles: { 0:{ fontStyle:'bold', cellWidth: 45 } }
   });
 
   const y1 = doc.lastAutoTable.finalY + 8;
@@ -3276,8 +3315,8 @@ async function exportarProtocoloPDF(atendimento, interacoes, modo='download'){
 
   const body = (interacoes||[]).map(i=>[
     fmtData(i.criado_em), i.tipo.replace('_',' '), i.agentes?.nome||'—',
-    i.conteudo + (i.destinatario_telefone ? ` (destinatário: +${i.destinatario_telefone})` : '')
-  ]);
+    limparMarkdownWhats(i.conteudo) + (i.destinatario_telefone ? ` (destinatário: +${i.destinatario_telefone})` : '')
+  ].map(pdfSafe));
   doc.autoTable({
     startY: y1+4, head:[['Data','Tipo','Agente','Conteúdo']], body,
     styles:{ fontSize: 8, cellPadding: 3 }, headStyles:{ fillColor:[15,110,99] },
@@ -3293,14 +3332,14 @@ async function exportarProtocoloPDF(atendimento, interacoes, modo='download'){
 // A6 retrato (105 x 148 mm): faixa institucional, ticket do protocolo,
 // corpo da mensagem com quebra automática e paginação, e rodapé.
 function limparMarkdownWhats(txt){
-  return (txt||'')
-    // as fontes padrão do PDF não têm emoji: sem remover, saem como
-    // caracteres quebrados no documento impresso
-    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu, '')
+  return pdfSafe(txt)
     .replace(/\*(.+?)\*/g, '$1')
     .replace(/_(.+?)_/g, '$1')
     .replace(/~(.+?)~/g, '$1')
-    .replace(/[ \t]+$/gm, '');
+    .replace(/^[ \t]*[-*][ \t]+/gm, '- ')
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function gerarProtocoloPDFA6({ protocolo, titulo, mensagem, destinatario, modo = 'view' }){
@@ -3347,10 +3386,10 @@ function gerarProtocoloPDFA6({ protocolo, titulo, mensagem, destinatario, modo =
   doc.setTextColor(255,255,255);
   doc.setFont('helvetica','normal');
   doc.setFontSize(6.5);
-  doc.text((titulo || 'Protocolo de atendimento').toUpperCase(), M+4, y+5.5);
+  doc.text(pdfSafe(titulo || 'Protocolo de atendimento').toUpperCase(), M+4, y+5.5);
   doc.setFont('courier','bold');
   doc.setFontSize(12);
-  doc.text(protocolo || '—', M+4, y+11.5);
+  doc.text(pdfSafe(protocolo || '—'), M+4, y+11.5);
   doc.setTextColor(20,20,20);
   y += 21;
 
@@ -3360,7 +3399,7 @@ function gerarProtocoloPDFA6({ protocolo, titulo, mensagem, destinatario, modo =
     doc.text('Destinatário', M, y);
     doc.setFont('helvetica','normal');
     doc.setTextColor(60,72,88);
-    const dest = doc.splitTextToSize(destinatario, W-M*2);
+    const dest = doc.splitTextToSize(pdfSafe(destinatario), W-M*2);
     doc.text(dest, M, y+3.8);
     doc.setTextColor(20,20,20);
     y += 3.8 + dest.length*3.4 + 3;
