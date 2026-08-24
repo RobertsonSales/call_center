@@ -3701,12 +3701,28 @@ function mostrarFormularioEnvio(atendimento, interacoes, modo){
       Redirecionamento para técnico em visita presencial
     </label>
     <div id="dest-status" class="hint" style="margin-bottom:10px;"></div>
+    <button class="btn btn-ghost btn-block" id="btn-pdf-a6-form" style="margin-bottom:10px;">🧾 Gerar PDF do protocolo (A6)</button>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-primary" style="flex:1;" id="btn-confirmar-envio">${ehTransferencia ? 'Transferir e enviar' : 'Reenviar e enviar'}</button>
       <button class="btn btn-ghost" id="btn-cancelar-envio">Cancelar</button>
     </div>
   `;
   aplicarMascaraCelular($('#dest-telefone'));
+  // PDF do protocolo direto no formulário — antes mesmo de enviar/reenviar
+  $('#btn-pdf-a6-form')?.addEventListener('click', ()=>{
+    const nome = $('#dest-nome').value.trim();
+    const telefone = comDDI55($('#dest-telefone').value);
+    const texto = montarResumoHistorico(atendimento, interacoes, {
+      destinatarioNome: nome, destinatarioTelefone: telefone,
+      anexoUrl: null, redirecionamentoPresencial: $('#dest-presencial').checked
+    });
+    gerarProtocoloPDFA6({
+      protocolo: atendimento.protocolo || '',
+      titulo: ehTransferencia ? 'Transferencia de atendimento' : 'Reenvio de historico',
+      destinatario: telefone ? ('+'+telefone) : (nome || '—'),
+      mensagem: texto
+    });
+  });
   $('#btn-cancelar-envio').addEventListener('click', ()=> abrirDetalhe(atendimento.id));
   $('#btn-confirmar-envio').addEventListener('click', ()=> confirmarEnvio(atendimento, interacoes, modo));
 }
