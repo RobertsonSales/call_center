@@ -524,7 +524,7 @@
           <div class="field"><label>WhatsApp do cliente (celular)</label>
             <div class="phone-group"><span class="phone-prefix">+55</span><input id="f-telefone" inputmode="numeric" placeholder="(21) 98888-7777"/></div>
           </div>
-          <div class="field"><label>Equipamento</label><input id="f-equipamento" placeholder="Digite para buscar na base ou informe um novo…" autocomplete="off"/></div>
+          <div class="field"><label>Equipamento</label><input id="f-equipamento" placeholder="Digite nome, categoria ou nº de série…" autocomplete="off"/></div>
           <div class="field"><label>Descrição inicial do problema</label><textarea id="f-descricao" rows="3" placeholder="Ex: equipamento não liga após queda de energia"></textarea></div>
           <div class="field"><label>Procedimento sugerido (opcional)</label><textarea id="f-procedimento" rows="2" placeholder="Ex: verificar se o cabo de força está bem conectado e reiniciar o equipamento"></textarea></div>
           <div class="field"><label>Outras observações do cliente (opcional)</label><textarea id="f-observacoes" rows="2" placeholder="Ex: cliente relatou que o problema começou após uma queda de energia"></textarea></div>
@@ -577,7 +577,7 @@
           </div>
           <div class="field">
             <label>Equipamento(s)</label>
-            <input id="vt-equipamento" placeholder="Digite para buscar na base ou informe manualmente, separando por vírgula…" autocomplete="off"/>
+            <input id="vt-equipamento" placeholder="Digite nome ou nº de série, separando por vírgula…" autocomplete="off"/>
             <p class="hint" style="margin-top:6px;">Clique num resultado da lista ao lado para adicionar; pode informar mais de um separando por vírgula.</p>
           </div>
           <div class="field"><label>Período de referência (opcional)</label><input id="vt-periodo" placeholder="Ex: Julho/2026"/></div>
@@ -2210,11 +2210,11 @@ $('#f-equipamento').addEventListener('input', ()=>{
   if(q.length < 2){ esconderResultadosNovo(); return; }
   timerBuscaEquipNovo = setTimeout(async ()=>{
     const { data } = await sb.from('equipamentos').select('*, clientes(id, nome, cliente_grupo, telefone)').eq('ativo', true)
-      .ilike('nome', `%${q}%`).limit(20);
+      .or(`nome.ilike.%${q}%,numero_serie.ilike.%${q}%`).limit(20);
     // reforça, no lado do cliente, a busca sem acento sobre o que o
     // banco já trouxe (o ILIKE sozinho não ignora acentuação)
     const alvo = normalizarTexto(q);
-    const filtrados = (data||[]).filter(e => normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo));
+    const filtrados = (data||[]).filter(e => normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo) || normalizarTexto(e.numero_serie).includes(alvo));
     renderResultadosBuscaNovo('equipamento', filtrados.length ? filtrados : (data||[]));
   }, 280);
 });
@@ -2478,7 +2478,7 @@ $('#vt-equipamento').addEventListener('input', ()=>{
     if(!termoAtual){ renderResultadosBuscaVolume('equipamento', vtEquipamentosDoClienteCache, `Equipamentos de ${$('#vt-unidade').value.trim()}`); return; }
     const alvo = normalizarTexto(termoAtual);
     const filtrados = vtEquipamentosDoClienteCache.filter(e =>
-      normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo)
+      normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo) || normalizarTexto(e.numero_serie).includes(alvo)
     );
     renderResultadosBuscaVolume('equipamento', filtrados, `Equipamentos de ${$('#vt-unidade').value.trim()}`);
     return;
@@ -2487,9 +2487,9 @@ $('#vt-equipamento').addEventListener('input', ()=>{
   if(termoAtual.length < 2){ esconderResultadosVolume(); return; }
   timerBuscaEquipVolume = setTimeout(async ()=>{
     const { data } = await sb.from('equipamentos').select('*, clientes(id, nome)').eq('ativo', true)
-      .ilike('nome', `%${termoAtual}%`).limit(20);
+      .or(`nome.ilike.%${termoAtual}%,numero_serie.ilike.%${termoAtual}%`).limit(20);
     const alvo = normalizarTexto(termoAtual);
-    const filtrados = (data||[]).filter(e => normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo));
+    const filtrados = (data||[]).filter(e => normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo) || normalizarTexto(e.numero_serie).includes(alvo));
     renderResultadosBuscaVolume('equipamento', filtrados.length ? filtrados : (data||[]));
   }, 280);
 });
@@ -2620,7 +2620,7 @@ async function renderDashboard(){
     sb.from('atendimentos').select('*', {count:'exact', head:true}).eq('status','aberto'),
     sb.from('atendimentos').select('*', {count:'exact', head:true}).eq('status','em_andamento'),
     sb.from('atendimentos').select('*', {count:'exact', head:true}).gte('criado_em', hojeInicio.toISOString()),
-    sb.from('atendimentos').select('*, linhas(nome)').order('criado_em',{ascending:false}).limit(8)
+    sb.from('atendimentos').select('*, linhas(nome, numero)').order('criado_em',{ascending:false}).limit(8)
   ]);
 
   $('#stat-abertos').textContent = cAberto ?? 0;
@@ -2637,7 +2637,7 @@ async function renderDashboard(){
 async function renderAtendimentosAtivos(){
   const wrap = $('#atendimentos-table-wrap');
   const { data, error } = await sb.from('atendimentos')
-    .select('*, linhas(nome)')
+    .select('*, linhas(nome, numero)')
     .in('status', ['aberto','em_andamento'])
     .order('criado_em', {ascending:false});
 
@@ -2875,7 +2875,7 @@ async function renderSupervisao(){
   $('#stat-sup-abertos').textContent = cAberto ?? 0;
   $('#stat-sup-hoje').textContent = cHoje ?? 0;
 
-  let q = sb.from('atendimentos').select('*, linhas(nome), agentes(nome)').order('criado_em', {ascending:false}).limit(300);
+  let q = sb.from('atendimentos').select('*, linhas(nome, numero), agentes(nome)').order('criado_em', {ascending:false}).limit(300);
 
   const de = $('#fs-de').value, ate = $('#fs-ate').value;
   const protocolo = $('#fs-protocolo').value.trim();
@@ -3121,7 +3121,7 @@ async function renderHistorico(){
   const wrap = $('#historico-table-wrap');
   wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Carregando…</div>';
 
-  let q = sb.from('atendimentos').select('*, linhas(nome), agentes(nome)').order('criado_em', {ascending:false}).limit(300);
+  let q = sb.from('atendimentos').select('*, linhas(nome, numero), agentes(nome)').order('criado_em', {ascending:false}).limit(300);
 
   const de = $('#fh-de').value, ate = $('#fh-ate').value;
   const protocolo = $('#fh-protocolo').value.trim();
@@ -3163,6 +3163,12 @@ const PDF_SUBST = {
   '\u00a0':' ', '\u2192':'->', '\u2190':'<-', '\u2705':'[OK]',
   '\u274c':'[X]', '\u26a0':'[!]', '\u2713':'[OK]', '\u00b7':'-'
 };
+// nome da linha acompanhado do número (ex.: "Linha 1 (+5521988887777)")
+function linhaComNumero(linha){
+  if(!linha || !linha.nome) return '—';
+  return linha.numero ? `${linha.nome} (+${linha.numero})` : linha.nome;
+}
+
 function pdfSafe(txt){
   if(txt === null || txt === undefined) return '';
   let out = String(txt);
@@ -3216,7 +3222,7 @@ function exportarExcel(dados, nomeArquivo, comAgente){
       'Cliente': a.cliente_nome,
       'WhatsApp': '+'+a.cliente_telefone,
       'Equipamento': a.equipamento || '',
-      'Linha': a.linhas?.nome || ''
+      'Linha': a.linhas ? linhaComNumero(a.linhas) : ''
     };
     if(comAgente) linha['Agente'] = a.agentes?.nome || '';
     linha['Status'] = STATUS_LABEL[a.status] || a.status;
@@ -3293,7 +3299,7 @@ async function exportarProtocoloPDF(atendimento, interacoes, modo='download'){
     ...(atendimento.cliente_grupo ? [['Cliente', atendimento.cliente_grupo]] : []),
     ['WhatsApp', '+'+atendimento.cliente_telefone],
     ['Equipamento', atendimento.equipamento || '—'],
-    ['Linha', atendimento.linhas?.nome || '—'],
+    ['Linha', linhaComNumero(atendimento.linhas)],
     ['Agente responsável', atendimento.agentes?.nome || '—'],
     ['Status', STATUS_LABEL[atendimento.status] || atendimento.status],
     ['Início', fmtData(atendimento.criado_em)],
