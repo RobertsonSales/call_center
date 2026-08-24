@@ -1883,17 +1883,24 @@ async function executarBusca(){
   });
 }
 
+function formatarEquipamentoComSerie(equip){
+  if(!equip) return '';
+  const nome = (equip.nome || '').trim();
+  const serie = (equip.numero_serie || '').trim();
+  return serie ? `${nome} (série: ${serie})` : nome;
+}
+
 function selecionarDoCatalogo(equip){
   catalogoSelecionado = { cliente_id: equip.clientes?.id || null, equipamento_id: equip.id };
   $('#f-nome').value = equip.clientes?.nome || '';
   $('#f-cliente-grupo').value = equip.clientes?.cliente_grupo || '';
-  $('#f-equipamento').value = equip.nome || '';
+  $('#f-equipamento').value = formatarEquipamentoComSerie(equip);
   if(equip.clientes?.telefone){
     $('#f-telefone').value = formatarCelularBR(equip.clientes.telefone.replace(/^55/, ''));
   }
   const hint = $('#catalogo-selecionado-hint');
   hint.style.display = 'block';
-  hint.textContent = `✓ Selecionado do catálogo: ${equip.nome} — ${equip.clientes?.nome || ''}`;
+  hint.textContent = `✓ Selecionado do catálogo: ${formatarEquipamentoComSerie(equip)}${equip.clientes?.nome ? ' — ' + equip.clientes.nome : ''}`;
   fecharBuscaCatalogo();
   esconderResultadosNovo();
   switchView('novo');
@@ -2235,7 +2242,9 @@ $('#f-equipamento').addEventListener('blur', ()=>{
     const texto = $('#f-equipamento').value.trim();
     if(!texto || !catalogoSelecionado.cliente_id) return;
     const alvo = normalizarTexto(texto);
-    const match = equipamentosDoClienteCache.find(e => normalizarTexto(e.nome) === alvo);
+    const match = equipamentosDoClienteCache.find(e =>
+      normalizarTexto(e.nome) === alvo || normalizarTexto(formatarEquipamentoComSerie(e)) === alvo
+    );
     if(match) selecionarDoCatalogo(match);
   }, 200);
 });
