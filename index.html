@@ -3952,7 +3952,13 @@ function montarResumoHistorico(atendimento, interacoes, destino={}){
     txt += `\nNenhum procedimento registrado até o momento.\n`;
   }
 
-  if(destino.anexoUrl) txt += `\n📎 *Evidência anexada:* ${destino.anexoUrl}\n`;
+  // O WhatsApp gera automaticamente um "cartão de pré-visualização" para o
+  // primeiro link do texto — no caso, expondo o domínio interno do banco de
+  // dados acima da mensagem. Enviando a URL dentro de um bloco de código
+  // (```), o WhatsApp não a interpreta como link e nenhum preview é criado;
+  // o endereço continua visível e pode ser copiado/tocado pelo destinatário.
+  if(destino.anexoUrl) txt += `\n📎 *Evidência anexada:*\n\`\`\`${destino.anexoUrl}\`\`\`\n`;
+
 
   // Essa frase só faz sentido quando alguém vai assumir presencialmente
   // — num reenvio comum (ex: só mandar uma cópia para referência), não
