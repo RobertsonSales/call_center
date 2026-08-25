@@ -1032,6 +1032,24 @@ function waLink(numero, texto){
     : `https://web.whatsapp.com/send?phone=${n}&text=${t}&type=phone_number&app_absent=0`;
 }
 
+// Link para o APLICATIVO instalado (WhatsApp Desktop / app nativo). Quando
+// o sistema tem o WhatsApp instalado, este esquema entrega a mensagem à
+// sessão JÁ ABERTA do aplicativo — sem criar nenhuma aba no navegador.
+function waAppLink(numero, texto){
+  return `whatsapp://send?phone=${soDigitos(numero)}&text=${encodeURIComponent(texto)}`;
+}
+
+// Extrai número/texto de qualquer URL do WhatsApp (wa.me ou web.whatsapp.com),
+// para que um <a href="..."> também possa ser redirecionado ao aplicativo.
+function waDadosDaURL(url){
+  try{
+    const u = new URL(url, location.href);
+    const texto = u.searchParams.get('text') || '';
+    let numero = u.searchParams.get('phone') || '';
+    if(!numero && /(^|\.)wa\.me$/i.test(u.hostname)) numero = u.pathname.replace(/\D/g,'');
+    return { numero: soDigitos(numero), texto };
+  }catch(_){ return null; }
+}
 
 // Nome fixo de "janela" usado em todo envio ao WhatsApp: passar sempre
 // o mesmo nome para window.open()/target faz o navegador reaproveitar
@@ -1039,6 +1057,13 @@ function waLink(numero, texto){
 // link), em vez de abrir uma aba nova a cada clique — e assim também
 // não força o agente a reconectar o WhatsApp Web de novo.
 const WA_TAB = 'labmedic_whatsapp';
+
+// Preferência aprendida por máquina: 'sim' = o aplicativo instalado
+// respondeu ao esquema whatsapp:// (usamos sempre o app, sem abrir abas);
+// 'nao' = não respondeu (usamos direto a aba única do WhatsApp Web).
+const WA_PREF_APP = 'labmedic_wa_app_disponivel';
+function waPrefApp(){ try{ return localStorage.getItem(WA_PREF_APP); }catch(_){ return null; } }
+function setWaPrefApp(v){ try{ localStorage.setItem(WA_PREF_APP, v); }catch(_){} }
 
 // Referência viva da aba/janela do WhatsApp aberta por esta sessão.
 // Só passar o mesmo `name` para window.open() não basta: quando a
@@ -1054,7 +1079,10 @@ function waTabViva(){
 
 // Abre (ou reaproveita) a aba do WhatsApp de forma SÍNCRONA, ainda dentro
 // do handler do clique — antes de qualquer await de upload/insert.
+// Quando já sabemos que o aplicativo instalado atende (preferência 'sim'),
+// nem abrimos aba: o envio vai direto para a sessão do app.
 function abrirAbaWhatsAppSincrono(){
+  if(!ehMobile && waPrefApp() === 'sim') return null;
   try{
     if(waTabViva()){
       try{ waWinRef.focus(); }catch(_){}
@@ -1068,9 +1096,8 @@ function abrirAbaWhatsAppSincrono(){
   }
 }
 
-// Ponto único de saída para o WhatsApp: navega a aba existente; só abre
-// uma nova quando realmente não houver nenhuma.
-function abrirWhatsAppURL(url, winPreAberta){
+// Navega a aba única do WhatsApp Web (ou abre uma, se não houver nenhuma).
+function navegarNaAbaWeb(url, winPreAberta){
   const alvo = (winPreAberta && !winPreAberta.closed) ? winPreAberta : (waTabViva() ? waWinRef : null);
   if(alvo){
     waWinRef = alvo;
@@ -1085,6 +1112,67 @@ function abrirWhatsAppURL(url, winPreAberta){
   waWinRef = window.open(url, WA_TAB);
   if(!waWinRef) window.location.href = url; // pop-up bloqueado: último recurso
   return waWinRef;
+}
+
+// Tenta entregar ao APLICATIVO instalado. Se o sistema assumir o esquema
+// whatsapp:// (a janela do navegador perde o foco), consideramos entregue
+// e fechamos a aba em branco que havia sido pré-aberta. Se nada acontecer
+// em ~1,2s, caímos para a aba única do WhatsApp Web.
+function tentarAppNativo(numero, texto, winPreAberta, urlWebFallback){
+  let resolvido = false;
+  const iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+
+  const limpar = ()=>{
+    window.removeEventListener('blur', aoPerderFoco);
+    document.removeEventListener('visibilitychange', aoEsconder);
+    try{ iframe.remove(); }catch(_){}
+  };
+  const sucesso = ()=>{
+    if(resolvido) return; resolvido = true;
+    setWaPrefApp('sim');
+    // o app assumiu: a aba em branco pré-aberta não serve para nada
+    if(winPreAberta && !winPreAberta.closed && !waTabViva()){ try{ winPreAberta.close(); }catch(_){} }
+    limpar();
+  };
+  const aoPerderFoco = ()=> sucesso();
+  const aoEsconder = ()=>{ if(document.hidden) sucesso(); };
+
+  window.addEventListener('blur', aoPerderFoco);
+  document.addEventListener('visibilitychange', aoEsconder);
+
+  document.body.appendChild(iframe);
+  try{ iframe.contentWindow.location.href = waAppLink(numero, texto); }
+  catch(_){ /* navegador bloqueou o esquema — o timeout resolve abaixo */ }
+
+  setTimeout(()=>{
+    if(resolvido) return; resolvido = true;
+    setWaPrefApp('nao');
+    limpar();
+    navegarNaAbaWeb(urlWebFallback, winPreAberta);
+  }, 1200);
+}
+
+// Ponto único de saída para o WhatsApp:
+// 1) aplicativo instalado (não cria aba alguma, usa a sessão já aberta);
+// 2) senão, a MESMA aba do WhatsApp Web, sempre reaproveitada.
+function abrirWhatsAppURL(url, winPreAberta){
+  const dados = waDadosDaURL(url);
+  if(!ehMobile && dados && dados.numero && waPrefApp() !== 'nao'){
+    if(waPrefApp() === 'sim'){
+      // já sabemos que o app atende: entrega direta, sem abas
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+      try{ iframe.contentWindow.location.href = waAppLink(dados.numero, dados.texto); }catch(_){}
+      setTimeout(()=>{ try{ iframe.remove(); }catch(_){} }, 2000);
+      if(winPreAberta && !winPreAberta.closed && !waTabViva()){ try{ winPreAberta.close(); }catch(_){} }
+      return null;
+    }
+    tentarAppNativo(dados.numero, dados.texto, winPreAberta, url);
+    return null;
+  }
+  return navegarNaAbaWeb(url, winPreAberta);
 }
 
 function navegarAbaWhatsApp(winWhats, numero, texto){
