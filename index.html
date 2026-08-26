@@ -517,7 +517,6 @@
       <div class="topbar">
         <div><h1>Painel</h1><p>Visão consolidada dos protocolos que você atende.</p></div>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-ghost btn-sm" id="btn-abrir-busca">🔍 Buscar cliente/equipamento</button>
           <button class="btn btn-primary btn-sm" id="btn-atalho-novo">＋ Novo atendimento</button>
         </div>
       </div>
@@ -718,7 +717,10 @@
 
     <!-- ---------- CLIENTES & EQUIPAMENTOS ---------- -->
     <section class="view" id="view-catalogo">
-      <div class="topbar"><div><h1>Clientes &amp; Equipamentos</h1><p>Consulte clientes e os equipamentos vinculados a eles pelas caixas de busca abaixo. Cadastrar, editar ou inativar é reservado ao Supervisor.</p></div></div>
+      <div class="topbar">
+        <div><h1>Clientes &amp; Equipamentos</h1><p>Consulte clientes e os equipamentos vinculados a eles pelas caixas de busca abaixo. Cadastrar, editar ou inativar é reservado ao Supervisor.</p></div>
+        <button class="btn btn-ghost btn-sm" id="btn-abrir-busca" style="display:none;">🔍 Buscar Clientes e Equipamentos</button>
+      </div>
 
       <div class="grid-2" id="catalogo-forms" style="display:none;margin-bottom:16px;">
         <div class="card card-pad">
@@ -1492,6 +1494,7 @@ async function afterLogin(session){
       const navSup = $('#nav-supervisao'); if(navSup) navSup.style.display = 'flex';
       const navAg = $('#nav-agentes'); if(navAg) navAg.style.display = 'flex';
       const navCat = $('#nav-categorias'); if(navCat) navCat.style.display = 'flex';
+      const btnBusca = $('#btn-abrir-busca'); if(btnBusca) btnBusca.style.display = 'inline-flex';
       setText('#agent-role-badge', '· Supervisor');
       try{
         await carregarAgentesParaFiltro();
@@ -3336,6 +3339,7 @@ async function alternarAdminAgente(agente){
     $('#nav-supervisao').style.display = 'none';
     $('#nav-agentes').style.display = 'none';
     $('#nav-categorias').style.display = 'none';
+    $('#btn-abrir-busca').style.display = 'none';
     $('#agent-role-badge').textContent = '';
     switchView('dashboard');
     return;
