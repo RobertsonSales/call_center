@@ -247,6 +247,39 @@
   .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);}
   .card-pad{padding:22px 24px;}
   .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+
+  /* Container do formulário (Novo atendimento / Solicitar volume de testes):
+     rolagem vertical PRÓPRIA, independente do scroll da página, com barra
+     de rolagem destacada (mais grossa e na cor primária) para deixar claro
+     que aquele bloco tem conteúdo além do que cabe na tela. */
+  .form-scroll{
+    position:sticky;
+    top:18px;
+    align-self:start;
+    max-height:calc(100vh - 150px);
+    overflow-y:scroll;            /* barra sempre visível, não só no hover */
+    overscroll-behavior:contain;  /* não "vaza" o scroll para a página */
+    padding-right:18px;
+    scrollbar-gutter:stable;
+    scrollbar-width:auto;
+    scrollbar-color:var(--primary) var(--primary-light);
+  }
+  .form-scroll::-webkit-scrollbar{width:14px;}
+  .form-scroll::-webkit-scrollbar-track{
+    background:var(--primary-light);
+    border-radius:10px;
+    margin:10px 0;
+  }
+  .form-scroll::-webkit-scrollbar-thumb{
+    background:linear-gradient(180deg,var(--primary),var(--primary-dark));
+    border-radius:10px;
+    border:3px solid var(--primary-light);
+    min-height:48px;
+  }
+  .form-scroll::-webkit-scrollbar-thumb:hover{background:var(--primary-dark);}
+  @media (max-width:900px){
+    .form-scroll{position:static;max-height:none;overflow-y:visible;padding-right:0;}
+  }
   .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
   .table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
 
@@ -477,6 +510,7 @@
     <div class="nav-item" data-view="agentes" id="nav-agentes" style="display:none;"><span class="ic">👤</span>Agentes</div>
     <div class="nav-item" data-view="categorias" id="nav-categorias" style="display:none;"><span class="ic">🏷</span>Categorias de Encerramento</div>
     <div class="sidebar-footer">
+      <a class="logout-link" id="btn-wa-modo" href="#" style="margin-top:0;"></a>
       <div class="agent-chip">
         <div class="agent-avatar" id="agent-avatar">--</div>
         <div>
@@ -515,7 +549,7 @@
     <section class="view" id="view-novo">
       <div class="topbar"><div><h1>Novo atendimento</h1><p>Gera o protocolo e o link do WhatsApp já com a mensagem inicial pronta.</p></div></div>
       <div class="grid-2">
-        <div class="card card-pad">
+        <div class="card card-pad form-scroll">
           <div class="field"><label>Linha que recebeu o chamado</label>
             <select id="f-linha"></select>
           </div>
@@ -552,7 +586,11 @@
             </div>
             <p class="section-title">Mensagem para o cliente</p>
             <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;" id="novo-confirmacao-mensagem"></div>
-            <a class="btn btn-whatsapp btn-block" id="novo-confirmacao-link" target="labmedic_whatsapp" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar ao cliente</a>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+              <a class="btn btn-whatsapp" id="novo-confirmacao-link" target="labmedic_whatsapp" rel="noopener" style="flex:1;text-decoration:none;text-align:center;">📱 Abrir WhatsApp e enviar ao cliente</a>
+              <button class="btn btn-ghost" id="novo-confirmacao-copiar" title="Copiar a mensagem para colar manualmente em uma janela do WhatsApp já aberta">📋 Copiar</button>
+            </div>
+            <p class="hint" style="margin:-4px 0 10px;">Se você já tem o WhatsApp aberto em outra janela/app e prefere não abrir uma nova aba, use "Copiar" e cole a mensagem por lá.</p>
             <button class="btn btn-ghost btn-block" id="novo-confirmacao-pdf" style="margin-bottom:10px;">🧾 Gerar PDF do protocolo (A6)</button>
             <p class="hint" style="margin-bottom:10px;">A conversa continua no WhatsApp real — use o botão abaixo para ir registrando novos procedimentos e observações à medida que forem surgindo, ou para encerrar quando o caso for resolvido.</p>
             <button class="btn btn-primary btn-block" id="btn-continuar-atendimento" style="margin-bottom:10px;">Continuar atendimento (procedimentos, observações ou encerrar)</button>
@@ -566,7 +604,7 @@
     <section class="view" id="view-volume">
       <div class="topbar"><div><h1>Solicitar volume de testes</h1><p>Gera um protocolo e o link do WhatsApp para pedir a um colaborador da unidade o volume de testes de determinados equipamentos.</p></div></div>
       <div class="grid-2">
-        <div class="card card-pad">
+        <div class="card card-pad form-scroll">
           <div class="field"><label>Linha que envia o pedido</label>
             <select id="vt-linha"></select>
           </div>
@@ -606,7 +644,11 @@
             </div>
             <p class="section-title">Mensagem para o colaborador</p>
             <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;" id="vt-confirmacao-mensagem"></div>
-            <a class="btn btn-whatsapp btn-block" id="vt-confirmacao-link" target="labmedic_whatsapp" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+              <a class="btn btn-whatsapp" id="vt-confirmacao-link" target="labmedic_whatsapp" rel="noopener" style="flex:1;text-decoration:none;text-align:center;">📱 Abrir WhatsApp e enviar</a>
+              <button class="btn btn-ghost" id="vt-confirmacao-copiar" title="Copiar a mensagem para colar manualmente em uma janela do WhatsApp já aberta">📋 Copiar</button>
+            </div>
+            <p class="hint" style="margin:-4px 0 10px;">Se você já tem o WhatsApp aberto em outra janela/app e prefere não abrir uma nova aba, use "Copiar" e cole a mensagem por lá.</p>
             <button class="btn btn-ghost btn-block" id="vt-confirmacao-pdf" style="margin-bottom:10px;">🧾 Gerar PDF do protocolo (A6)</button>
             <p class="hint" style="margin-bottom:10px;">Quando o colaborador responder pelo WhatsApp com os números (e a foto/print, se houver), abra este mesmo protocolo para anexar o arquivo recebido.</p>
             <button class="btn btn-primary btn-block" id="btn-ir-protocolo-volume" style="margin-bottom:10px;">Abrir este protocolo para anexar a resposta</button>
@@ -1058,12 +1100,54 @@ function waDadosDaURL(url){
 // não força o agente a reconectar o WhatsApp Web de novo.
 const WA_TAB = 'labmedic_whatsapp';
 
-// Preferência aprendida por máquina: 'sim' = o aplicativo instalado
-// respondeu ao esquema whatsapp:// (usamos sempre o app, sem abrir abas);
-// 'nao' = não respondeu (usamos direto a aba única do WhatsApp Web).
+// Preferência do modo de entrega ao WhatsApp, por máquina/navegador:
+// 'sim' = entrega direto ao aplicativo instalado (whatsapp://), sem abrir
+//         nenhuma aba/janela do navegador — é o modo certo quando o
+//         WhatsApp instalado abre em janela própria, fora do navegador
+//         (app nativo/desktop), pois nesse caso o navegador não tem
+//         nenhuma aba dele para reaproveitar.
+// 'nao' = usa a aba única do WhatsApp Web dentro do navegador.
+// null  = ainda não definido: tenta detectar automaticamente na primeira vez
+//         (a detecção automática por si só é pouco confiável em navegadores
+//         recentes — por isso também existe o botão manual na barra
+//         lateral, que define isso direto, sem depender de detecção).
 const WA_PREF_APP = 'labmedic_wa_app_disponivel';
 function waPrefApp(){ try{ return localStorage.getItem(WA_PREF_APP); }catch(_){ return null; } }
 function setWaPrefApp(v){ try{ localStorage.setItem(WA_PREF_APP, v); }catch(_){} }
+
+// Botão da barra lateral que alterna o modo manualmente. Como o
+// navegador não tem como enxergar uma janela do app nativo do WhatsApp
+// (ela roda fora do navegador), a forma mais confiável de garantir que
+// o sistema entregue direto ao app — sem nunca abrir aba — é deixar o
+// próprio agente confirmar isso uma vez aqui, em vez de depender só da
+// detecção automática.
+function atualizarBotaoModoWhats(){
+  const btn = $('#btn-wa-modo');
+  if(!btn) return;
+  const modo = waPrefApp();
+  if(modo === 'sim'){
+    btn.textContent = '📱 Enviando direto pelo app instalado';
+    btn.title = 'Toque para usar a aba do WhatsApp Web no navegador em vez do aplicativo instalado.';
+  }else if(modo === 'nao'){
+    btn.textContent = '🌐 Enviando pela aba do WhatsApp Web';
+    btn.title = 'Toque para enviar direto pelo aplicativo do WhatsApp instalado (sem abrir aba no navegador).';
+  }else{
+    btn.textContent = '↻ Detectar automaticamente o WhatsApp';
+    btn.title = 'Ainda não definido — o sistema tenta detectar sozinho no primeiro envio. Toque para forçar o uso do aplicativo instalado.';
+  }
+}
+document.addEventListener('click', (ev)=>{
+  const btn = ev.target.closest && ev.target.closest('#btn-wa-modo');
+  if(!btn) return;
+  ev.preventDefault();
+  const modo = waPrefApp();
+  // ciclo: não definido/auto -> força app instalado -> força aba web -> auto de novo
+  if(modo === 'sim') setWaPrefApp('nao');
+  else if(modo === 'nao') localStorage.removeItem(WA_PREF_APP);
+  else setWaPrefApp('sim');
+  atualizarBotaoModoWhats();
+  toast('Preferência de envio ao WhatsApp atualizada.');
+});
 
 // Referência viva da aba/janela do WhatsApp aberta por esta sessão.
 // Só passar o mesmo `name` para window.open() não basta: quando a
@@ -1082,7 +1166,11 @@ function waTabViva(){
 // Quando já sabemos que o aplicativo instalado atende (preferência 'sim'),
 // nem abrimos aba: o envio vai direto para a sessão do app.
 function abrirAbaWhatsAppSincrono(){
-  if(!ehMobile && waPrefApp() === 'sim') return null;
+  // No desktop só pré-abrimos uma aba quando o agente escolheu
+  // explicitamente usar o WhatsApp Web ('nao'). Em qualquer outro caso
+  // (app instalado ou modo automático) a entrega vai direto ao aplicativo
+  // já aberto, sem criar nenhuma aba/janela nova no navegador.
+  if(!ehMobile && waPrefApp() !== 'nao') return null;
   try{
     if(waTabViva()){
       try{ waWinRef.focus(); }catch(_){}
@@ -1110,27 +1198,47 @@ function navegarNaAbaWeb(url, winPreAberta){
     }
   }
   waWinRef = window.open(url, WA_TAB);
-  if(!waWinRef) window.location.href = url; // pop-up bloqueado: último recurso
+  if(!waWinRef){
+    // pop-up bloqueado: não navegamos a aba do sistema (perderíamos o
+    // formulário/protocolo na tela) — o agente usa o botão de envio ou
+    // o "Copiar" da tela de confirmação.
+    toast('O navegador bloqueou a abertura do WhatsApp. Use o botão "Abrir WhatsApp" ou "Copiar" na confirmação.');
+  }
   return waWinRef;
 }
 
+// Entrega direta ao aplicativo instalado, sem abrir nenhuma aba: dispara
+// o esquema whatsapp:// através de um link temporário "clicado" via
+// JavaScript (mais confiável do que navegar um iframe — navegadores
+// recentes costumam bloquear silenciosamente a navegação de um iframe
+// para um esquema que não seja http/https, então o iframe muitas vezes
+// nunca chegava a acionar o aplicativo).
+function dispararAppNativo(numero, texto){
+  const a = document.createElement('a');
+  a.href = waAppLink(numero, texto);
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  try{ a.click(); }
+  catch(_){ /* alguns navegadores exigem window.location como alternativa */ try{ window.location.href = a.href; }catch(_){} }
+  setTimeout(()=>{ try{ a.remove(); }catch(_){} }, 0);
+}
+
 // Tenta entregar ao APLICATIVO instalado. Se o sistema assumir o esquema
-// whatsapp:// (a janela do navegador perde o foco), consideramos entregue
-// e fechamos a aba em branco que havia sido pré-aberta. Se nada acontecer
-// em ~1,2s, caímos para a aba única do WhatsApp Web.
+// whatsapp:// (a janela do navegador perde o foco, ou fica em segundo
+// plano), consideramos entregue e fechamos a aba em branco que havia
+// sido pré-aberta. Se nada acontecer em ~1,5s, caímos para a aba única
+// do WhatsApp Web.
 function tentarAppNativo(numero, texto, winPreAberta, urlWebFallback){
   let resolvido = false;
-  const iframe = document.createElement('iframe');
-  iframe.style.display = 'none';
-
   const limpar = ()=>{
     window.removeEventListener('blur', aoPerderFoco);
     document.removeEventListener('visibilitychange', aoEsconder);
-    try{ iframe.remove(); }catch(_){}
+    window.removeEventListener('pagehide', aoPerderFoco);
   };
   const sucesso = ()=>{
     if(resolvido) return; resolvido = true;
     setWaPrefApp('sim');
+    atualizarBotaoModoWhats();
     // o app assumiu: a aba em branco pré-aberta não serve para nada
     if(winPreAberta && !winPreAberta.closed && !waTabViva()){ try{ winPreAberta.close(); }catch(_){} }
     limpar();
@@ -1140,17 +1248,17 @@ function tentarAppNativo(numero, texto, winPreAberta, urlWebFallback){
 
   window.addEventListener('blur', aoPerderFoco);
   document.addEventListener('visibilitychange', aoEsconder);
+  window.addEventListener('pagehide', aoPerderFoco);
 
-  document.body.appendChild(iframe);
-  try{ iframe.contentWindow.location.href = waAppLink(numero, texto); }
-  catch(_){ /* navegador bloqueou o esquema — o timeout resolve abaixo */ }
+  dispararAppNativo(numero, texto);
 
   setTimeout(()=>{
     if(resolvido) return; resolvido = true;
     setWaPrefApp('nao');
+    atualizarBotaoModoWhats();
     limpar();
     navegarNaAbaWeb(urlWebFallback, winPreAberta);
-  }, 1200);
+  }, 2500);
 }
 
 // Ponto único de saída para o WhatsApp:
@@ -1160,12 +1268,8 @@ function abrirWhatsAppURL(url, winPreAberta){
   const dados = waDadosDaURL(url);
   if(!ehMobile && dados && dados.numero && waPrefApp() !== 'nao'){
     if(waPrefApp() === 'sim'){
-      // já sabemos que o app atende: entrega direta, sem abas
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      document.body.appendChild(iframe);
-      try{ iframe.contentWindow.location.href = waAppLink(dados.numero, dados.texto); }catch(_){}
-      setTimeout(()=>{ try{ iframe.remove(); }catch(_){} }, 2000);
+      // já sabemos que o app atende: entrega direta, sem abrir aba alguma
+      dispararAppNativo(dados.numero, dados.texto);
       if(winPreAberta && !winPreAberta.closed && !waTabViva()){ try{ winPreAberta.close(); }catch(_){} }
       return null;
     }
@@ -1179,6 +1283,31 @@ function navegarAbaWhatsApp(winWhats, numero, texto){
   abrirWhatsAppURL(waLink(numero, texto), winWhats);
 }
 
+// Fallback manual: copia a mensagem para a área de transferência, para o
+// agente colar em QUALQUER janela do WhatsApp que já esteja aberta —
+// inclusive o app instalado como PWA/desktop, que o navegador não tem
+// como enxergar nem controlar (ver nota sobre limitação de navegador
+// acima da função abrirAbaWhatsAppSincrono).
+async function copiarTexto(texto, botao){
+  const rotuloOriginal = botao ? botao.textContent : null;
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(texto);
+    }else{
+      const ta = document.createElement('textarea');
+      ta.value = texto; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    toast('Mensagem copiada — cole na janela do WhatsApp já aberta.');
+    if(botao){ botao.textContent = '✅ Copiado'; setTimeout(()=>{ botao.textContent = rotuloOriginal; }, 1800); }
+  }catch(err){
+    console.warn('[copiar] falha ao copiar para a área de transferência:', err);
+    toast('Não foi possível copiar automaticamente. Selecione a mensagem acima e copie manualmente.');
+  }
+}
+
 // Qualquer link do app que aponte para a aba do WhatsApp passa pelo
 // mesmo controle — sem isso, o clique no <a target="..."> podia abrir
 // uma janela nova em vez de reusar a sessão já aberta.
@@ -1187,6 +1316,16 @@ document.addEventListener('click', (ev)=>{
   if(!a || !a.href) return;
   ev.preventDefault();
   abrirWhatsAppURL(a.href);
+});
+
+// Botões "Copiar" das telas de confirmação (Novo atendimento / Solicitar
+// volume de testes) — leem a mensagem já exibida na prévia e copiam para
+// a área de transferência, sem depender de abrir nenhuma janela.
+document.addEventListener('click', (ev)=>{
+  const btnNovo = ev.target.closest && ev.target.closest('#novo-confirmacao-copiar');
+  if(btnNovo){ copiarTexto($('#novo-confirmacao-mensagem').textContent, btnNovo); return; }
+  const btnVt = ev.target.closest && ev.target.closest('#vt-confirmacao-copiar');
+  if(btnVt){ copiarTexto($('#vt-confirmacao-mensagem').textContent, btnVt); return; }
 });
 
 function fmtData(iso){
@@ -1362,6 +1501,7 @@ async function afterLogin(session){
     $('#splash-view').style.display = 'none';
     $('#login-view').style.display = 'none';
     $('#app-view').style.display = 'block';
+    atualizarBotaoModoWhats();
 
     try{ await carregarLinhas(); }catch(e){ console.error('[login] erro ao carregar linhas:', e); }
     try{ await renderDashboard(); }catch(e){ console.error('[login] erro ao renderizar painel:', e); }
