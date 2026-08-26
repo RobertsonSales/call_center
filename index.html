@@ -253,32 +253,20 @@
      de rolagem destacada (mais grossa e na cor primária) para deixar claro
      que aquele bloco tem conteúdo além do que cabe na tela. */
   .form-scroll{
-    position:sticky;
-    top:18px;
-    align-self:start;
-    max-height:calc(100vh - 150px);
-    overflow-y:scroll;            /* barra sempre visível, não só no hover */
-    overscroll-behavior:contain;  /* não "vaza" o scroll para a página */
-    padding-right:18px;
-    scrollbar-gutter:stable;
+    max-height:calc(100vh - 168px);
+    overflow-y:auto;
+    padding-right:16px;
+    margin-right:-6px;
+    border-right:3px solid var(--primary-light);
     scrollbar-width:auto;
     scrollbar-color:var(--primary) var(--primary-light);
   }
-  .form-scroll::-webkit-scrollbar{width:14px;}
-  .form-scroll::-webkit-scrollbar-track{
-    background:var(--primary-light);
-    border-radius:10px;
-    margin:10px 0;
-  }
-  .form-scroll::-webkit-scrollbar-thumb{
-    background:linear-gradient(180deg,var(--primary),var(--primary-dark));
-    border-radius:10px;
-    border:3px solid var(--primary-light);
-    min-height:48px;
-  }
-  .form-scroll::-webkit-scrollbar-thumb:hover{background:var(--primary-dark);}
+  .form-scroll::-webkit-scrollbar{width:12px;}
+  .form-scroll::-webkit-scrollbar-track{background:var(--primary-light);border-radius:8px;}
+  .form-scroll::-webkit-scrollbar-thumb{background:var(--primary);border-radius:8px;border:2.5px solid var(--primary-light);}
+  .form-scroll::-webkit-scrollbar-thumb:hover{background:var(--primary-dark, var(--primary));}
   @media (max-width:900px){
-    .form-scroll{position:static;max-height:none;overflow-y:visible;padding-right:0;}
+    .form-scroll{max-height:none;overflow-y:visible;padding-right:0;margin-right:0;border-right:none;}
   }
   .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
   .table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
@@ -510,7 +498,7 @@
     <div class="nav-item" data-view="agentes" id="nav-agentes" style="display:none;"><span class="ic">👤</span>Agentes</div>
     <div class="nav-item" data-view="categorias" id="nav-categorias" style="display:none;"><span class="ic">🏷</span>Categorias de Encerramento</div>
     <div class="sidebar-footer">
-      <a class="logout-link" id="btn-wa-modo" href="#" style="margin-top:0;"></a>
+      <a class="logout-link" id="btn-wa-modo" href="#" data-view="linhas" style="margin-top:0;background:rgba(255,255,255,.06);border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:6px;"></a>
       <div class="agent-chip">
         <div class="agent-avatar" id="agent-avatar">--</div>
         <div>
@@ -696,6 +684,21 @@
     <!-- ---------- LINHAS ---------- -->
     <section class="view" id="view-linhas">
       <div class="topbar"><div><h1>Linhas de WhatsApp</h1><p>Números que recebem chamados e geram protocolos.</p></div></div>
+
+      <div class="card card-pad" style="margin-bottom:16px;">
+        <p class="section-title">Modo de entrega das mensagens do WhatsApp</p>
+        <p class="section-sub" style="margin-bottom:12px;">Define como o sistema entrega a mensagem ao clicar em "Abrir WhatsApp e enviar" — direto no aplicativo instalado (sem abrir aba) ou pela aba do WhatsApp Web no navegador.</p>
+        <div class="field" style="max-width:460px;margin-bottom:6px;">
+          <label>Este computador deve enviar…</label>
+          <select id="wa-modo-select">
+            <option value="">Detectar automaticamente (tenta o app; se não responder, usa a aba do navegador)</option>
+            <option value="sim">Sempre pelo aplicativo do WhatsApp instalado (sem abrir aba)</option>
+            <option value="nao">Sempre pela aba do WhatsApp Web no navegador</option>
+          </select>
+        </div>
+        <p class="hint">Se o WhatsApp instalado neste computador abre em janela própria (fora do navegador), escolha "Sempre pelo aplicativo instalado" — essa é a opção recomendada nesse caso, pois o navegador não tem como enxergar aquela janela para reaproveitá-la.</p>
+      </div>
+
       <div class="grid-2">
         <div class="card card-pad" id="linha-form-wrap" style="display:none;">
           <p class="section-title">Cadastrar nova linha</p>
@@ -1123,28 +1126,32 @@ function setWaPrefApp(v){ try{ localStorage.setItem(WA_PREF_APP, v); }catch(_){}
 // detecção automática.
 function atualizarBotaoModoWhats(){
   const btn = $('#btn-wa-modo');
+  const select = $('#wa-modo-select');
+  const modo = waPrefApp() || '';
+  if(select) select.value = modo;
   if(!btn) return;
-  const modo = waPrefApp();
   if(modo === 'sim'){
-    btn.textContent = '📱 Enviando direto pelo app instalado';
-    btn.title = 'Toque para usar a aba do WhatsApp Web no navegador em vez do aplicativo instalado.';
+    btn.innerHTML = '📱 <span>App do WhatsApp instalado</span>';
+    btn.title = 'Mensagens sendo entregues direto ao aplicativo instalado, sem abrir aba. Clique para ajustar em Linhas WhatsApp.';
   }else if(modo === 'nao'){
-    btn.textContent = '🌐 Enviando pela aba do WhatsApp Web';
-    btn.title = 'Toque para enviar direto pelo aplicativo do WhatsApp instalado (sem abrir aba no navegador).';
+    btn.innerHTML = '🌐 <span>Aba do WhatsApp Web</span>';
+    btn.title = 'Mensagens sendo entregues pela aba do WhatsApp Web no navegador. Clique para ajustar em Linhas WhatsApp.';
   }else{
-    btn.textContent = '↻ Detectar automaticamente o WhatsApp';
-    btn.title = 'Ainda não definido — o sistema tenta detectar sozinho no primeiro envio. Toque para forçar o uso do aplicativo instalado.';
+    btn.innerHTML = '↻ <span>Detecção automática do WhatsApp</span>';
+    btn.title = 'Ainda não definido — o sistema tenta detectar sozinho. Clique para escolher manualmente em Linhas WhatsApp.';
   }
 }
 document.addEventListener('click', (ev)=>{
   const btn = ev.target.closest && ev.target.closest('#btn-wa-modo');
   if(!btn) return;
   ev.preventDefault();
-  const modo = waPrefApp();
-  // ciclo: não definido/auto -> força app instalado -> força aba web -> auto de novo
-  if(modo === 'sim') setWaPrefApp('nao');
-  else if(modo === 'nao') localStorage.removeItem(WA_PREF_APP);
-  else setWaPrefApp('sim');
+  switchView('linhas');
+});
+document.addEventListener('change', (ev)=>{
+  const sel = ev.target.closest && ev.target.closest('#wa-modo-select');
+  if(!sel) return;
+  if(sel.value) setWaPrefApp(sel.value);
+  else{ try{ localStorage.removeItem(WA_PREF_APP); }catch(_){} }
   atualizarBotaoModoWhats();
   toast('Preferência de envio ao WhatsApp atualizada.');
 });
@@ -1166,11 +1173,7 @@ function waTabViva(){
 // Quando já sabemos que o aplicativo instalado atende (preferência 'sim'),
 // nem abrimos aba: o envio vai direto para a sessão do app.
 function abrirAbaWhatsAppSincrono(){
-  // No desktop só pré-abrimos uma aba quando o agente escolheu
-  // explicitamente usar o WhatsApp Web ('nao'). Em qualquer outro caso
-  // (app instalado ou modo automático) a entrega vai direto ao aplicativo
-  // já aberto, sem criar nenhuma aba/janela nova no navegador.
-  if(!ehMobile && waPrefApp() !== 'nao') return null;
+  if(!ehMobile && waPrefApp() === 'sim') return null;
   try{
     if(waTabViva()){
       try{ waWinRef.focus(); }catch(_){}
@@ -1198,12 +1201,7 @@ function navegarNaAbaWeb(url, winPreAberta){
     }
   }
   waWinRef = window.open(url, WA_TAB);
-  if(!waWinRef){
-    // pop-up bloqueado: não navegamos a aba do sistema (perderíamos o
-    // formulário/protocolo na tela) — o agente usa o botão de envio ou
-    // o "Copiar" da tela de confirmação.
-    toast('O navegador bloqueou a abertura do WhatsApp. Use o botão "Abrir WhatsApp" ou "Copiar" na confirmação.');
-  }
+  if(!waWinRef) window.location.href = url; // pop-up bloqueado: último recurso
   return waWinRef;
 }
 
@@ -1258,7 +1256,7 @@ function tentarAppNativo(numero, texto, winPreAberta, urlWebFallback){
     atualizarBotaoModoWhats();
     limpar();
     navegarNaAbaWeb(urlWebFallback, winPreAberta);
-  }, 2500);
+  }, 1500);
 }
 
 // Ponto único de saída para o WhatsApp:
@@ -1268,8 +1266,12 @@ function abrirWhatsAppURL(url, winPreAberta){
   const dados = waDadosDaURL(url);
   if(!ehMobile && dados && dados.numero && waPrefApp() !== 'nao'){
     if(waPrefApp() === 'sim'){
-      // já sabemos que o app atende: entrega direta, sem abrir aba alguma
-      dispararAppNativo(dados.numero, dados.texto);
+      // já sabemos que o app atende: entrega direta, sem abas
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+      try{ iframe.contentWindow.location.href = waAppLink(dados.numero, dados.texto); }catch(_){}
+      setTimeout(()=>{ try{ iframe.remove(); }catch(_){} }, 2000);
       if(winPreAberta && !winPreAberta.closed && !waTabViva()){ try{ winPreAberta.close(); }catch(_){} }
       return null;
     }
@@ -3760,7 +3762,7 @@ async function abrirDetalhe(id){
 
     <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
       <a class="btn btn-whatsapp btn-sm" target="${WA_TAB}" href="${waLink(atendimento.cliente_telefone,'Olá '+atendimento.cliente_nome+', tudo bem? Sobre o protocolo '+atendimento.protocolo+': ')}">Abrir WhatsApp do cliente</a>
-      ${atendimento.status!=='encerrado' ? `<button class="btn btn-ghost btn-sm" id="btn-encerrar">Encerrar atendimento</button>`:''}
+      ${String(atendimento.status||'').toLowerCase()!=='encerrado' ? `<button class="btn btn-ghost btn-sm" id="btn-encerrar">Encerrar atendimento</button>`:''}
       <button class="btn btn-ghost btn-sm" id="btn-transferir">Transferir / reenviar histórico</button>
       <button class="btn btn-ghost btn-sm" id="btn-visualizar-pdf-protocolo">👁 Visualizar PDF</button>
       <button class="btn btn-ghost btn-sm" id="btn-exportar-pdf-protocolo">⬇ Baixar PDF</button>
