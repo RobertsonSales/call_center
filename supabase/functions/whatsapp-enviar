@@ -275,3 +275,157 @@ async function chamarFuncaoInterna(nome: string, corpo: Record<string, unknown>)
     console.error(`[whatsapp-webhook] falha ao chamar ${nome}:`, await resp.text());
   }
 }
+// ============================================================================
+// whatsapp-enviar
+// Grupo Labmedic — Sistema de Atendimento Técnico Interno
+//
+// Chamada pela própria aplicação (em vez de abrir um link wa.me) para enviar
+// uma mensagem via Graph API da Meta, e pela função whatsapp-webhook para a
+// mensagem automática de confirmação de protocolo (Cenário B).
+//
+// Corpo esperado (JSON):
+//   {
+//     atendimento_id: string,          // protocolo ao qual a mensagem pertence
+//     telefone: string,                // destinatário, formato internacional sem "+"
+//     texto?: string,                  // mensagem de texto livre (dentro da janela de 24h)
+//     template_nome?: string,          // nome do template aprovado (fora da janela de 24h)
+//     template_parametros?: string[],  // valores das variáveis do template, em ordem
+//     agente_id?: string | null        // quem enviou (null = mensagem automática do sistema)
+//   }
+//
+// Segredos necessários:
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+//   META_ACCESS_TOKEN   -> token permanente (System User), gerado na Fase 2
+// ============================================================================
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const META_ACCESS_TOKEN = Deno.env.get("META_ACCESS_TOKEN")!;
+const GRAPH_API_VERSAO = "v20.0";
+
+const sb = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+// @ts-ignore Deno global disponível no runtime das Edge Functions
+Deno.serve(async (req: Request) => {
+  if (req.method !== "POST") {
+    return new Response("método não suportado", { status: 405 });
+  }
+
+  // chamadas vindas da própria aplicação (navegador do agente) autenticam com
+  // o token do usuário logado; chamadas internas (whatsapp-webhook) usam a
+  // service role — os dois casos já chegam autenticados pelo Supabase Auth
+  // na borda da função, então aqui só precisamos validar o corpo da requisição.
+  let corpo: any;
+  try {
+    corpo = await req.json();
+  } catch {
+    return new Response(JSON.stringify({ erro: "corpo inválido" }), { status: 400 });
+  }
+
+  const { atendimento_id, telefone, texto, template_nome, template_parametros, agente_id } = corpo;
+
+  if (!atendimento_id || !telefone || (!texto && !template_nome)) {
+    return new Response(
+      JSON.stringify({ erro: "informe atendimento_id, telefone e (texto ou template_nome)" }),
+      { status: 400 }
+    );
+  }
+
+  try {
+    // ---- descobre o phone_number_id da linha responsável por este atendimento ----
+    const { data: atendimento } = await sb
+      .from("atendimentos")
+      .select("linha_id")
+      .eq("id", atendimento_id)
+      .single();
+
+    const { data: numero } = await sb
+      .from("whatsapp_numeros")
+      .select("phone_number_id")
+      .eq("linha_id", atendimento?.linha_id)
+      .eq("ativo", true)
+      .maybeSingle();
+
+    if (!numero?.phone_number_id) {
+      throw new Error("Nenhum número de WhatsApp ativo vinculado a esta linha.");
+    }
+
+    // ---- monta o payload da Graph API ----
+    const payloadEnvio = template_nome
+      ? {
+          messaging_product: "whatsapp",
+          to: telefone,
+          type: "template",
+          template: {
+            name: template_nome,
+            language: { code: "pt_BR" },
+            components: template_parametros?.length
+              ? [{ type: "body", parameters: template_parametros.map((p: string) => ({ type: "text", text: p })) }]
+              : [],
+          },
+        }
+      : {
+          messaging_product: "whatsapp",
+          to: telefone,
+          type: "text",
+          text: { body: texto },
+        };
+
+    const respostaMeta = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSAO}/${numero.phone_number_id}/messages`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${META_ACCESS_TOKEN}`,
+        },
+        body: JSON.stringify(payloadEnvio),
+      }
+    );
+
+    const resultadoMeta = await respostaMeta.json();
+
+    if (!respostaMeta.ok) {
+      console.error("[whatsapp-enviar] erro retornado pela Meta:", resultadoMeta);
+      throw new Error(resultadoMeta?.error?.message ?? "falha ao enviar mensagem");
+    }
+
+    const waMessageId: string | undefined = resultadoMeta?.messages?.[0]?.id;
+
+    // ---- grava a interação (histórico "humano") ----
+    const { data: interacao } = await sb
+      .from("interacoes")
+      .insert({
+        atendimento_id,
+        agente_id: agente_id ?? null,
+        tipo: template_nome ? "mensagem_template" : "mensagem",
+        conteudo: texto ?? `Template: ${template_nome}`,
+      })
+      .select("id")
+      .single();
+
+    // ---- log bruto da mensagem enviada ----
+    await sb.from("mensagens_whatsapp").insert({
+      atendimento_id,
+      interacao_id: interacao?.id ?? null,
+      wa_message_id: waMessageId ?? null,
+      direcao: "enviada",
+      tipo_conteudo: template_nome ? "template" : "texto",
+      status: "enviada",
+      payload_bruto: resultadoMeta,
+    });
+
+    return new Response(JSON.stringify({ sucesso: true, wa_message_id: waMessageId }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    console.error("[whatsapp-enviar] erro:", err);
+    return new Response(JSON.stringify({ sucesso: false, erro: String(err) }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+});
