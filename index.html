@@ -247,27 +247,6 @@
   .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);}
   .card-pad{padding:22px 24px;}
   .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
-
-  /* Container do formulário (Novo atendimento / Solicitar volume de testes):
-     rolagem vertical PRÓPRIA, independente do scroll da página, com barra
-     de rolagem destacada (mais grossa e na cor primária) para deixar claro
-     que aquele bloco tem conteúdo além do que cabe na tela. */
-  .form-scroll{
-    max-height:calc(100vh - 168px);
-    overflow-y:auto;
-    padding-right:16px;
-    margin-right:-6px;
-    border-right:3px solid var(--primary-light);
-    scrollbar-width:auto;
-    scrollbar-color:var(--primary) var(--primary-light);
-  }
-  .form-scroll::-webkit-scrollbar{width:12px;}
-  .form-scroll::-webkit-scrollbar-track{background:var(--primary-light);border-radius:8px;}
-  .form-scroll::-webkit-scrollbar-thumb{background:var(--primary);border-radius:8px;border:2.5px solid var(--primary-light);}
-  .form-scroll::-webkit-scrollbar-thumb:hover{background:var(--primary-dark, var(--primary));}
-  @media (max-width:900px){
-    .form-scroll{max-height:none;overflow-y:visible;padding-right:0;margin-right:0;border-right:none;}
-  }
   .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
   .table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
 
@@ -335,6 +314,12 @@
   tbody tr:hover{background:var(--bg);}
   tbody tr{cursor:pointer;}
   .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:700;}
+  /* contador de "não assumidos" no menu lateral + destaque de mensagem nova
+     nas linhas da tabela (ver Fluxo de Conversas Simultâneas, capítulo 4) */
+  .badge-contador{display:inline-block;margin-left:8px;background:var(--danger);color:#fff;border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;}
+  tr.linha-mensagem-nova{position:relative;}
+  tr.linha-mensagem-nova td:first-child{box-shadow:inset 3px 0 0 var(--primary);}
+  tr.linha-mensagem-nova .ponto-novo{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--primary);margin-right:6px;vertical-align:middle;}
   .badge-aberto{background:var(--info-light);color:var(--info);}
   .badge-em_andamento{background:var(--warning-light);color:var(--warning);}
   .badge-transferido{background:#F0E9FB;color:#6A3FBF;}
@@ -488,7 +473,7 @@
     <div class="nav-item active" data-view="dashboard"><span class="ic">◆</span>Painel</div>
     <div class="nav-item" data-view="novo"><span class="ic">＋</span>Novo Atendimento</div>
     <div class="nav-item" data-view="volume"><span class="ic">📊</span>Solicitar Volume de Testes</div>
-    <div class="nav-item" data-view="atendimentos"><span class="ic">☰</span>Atendimentos Ativos</div>
+    <div class="nav-item" data-view="atendimentos"><span class="ic">☰</span>Atendimentos Ativos<span id="badge-nao-assumidos" class="badge-contador" style="display:none;"></span></div>
     <div class="nav-item" data-view="historico"><span class="ic">⏱</span>Histórico &amp; Auditoria</div>
     <div class="nav-group-label">Configuração</div>
     <div class="nav-item" data-view="linhas"><span class="ic">☏</span>Linhas WhatsApp</div>
@@ -498,7 +483,6 @@
     <div class="nav-item" data-view="agentes" id="nav-agentes" style="display:none;"><span class="ic">👤</span>Agentes</div>
     <div class="nav-item" data-view="categorias" id="nav-categorias" style="display:none;"><span class="ic">🏷</span>Categorias de Encerramento</div>
     <div class="sidebar-footer">
-      <a class="logout-link" id="btn-wa-modo" href="#" data-view="linhas" style="margin-top:0;background:rgba(255,255,255,.06);border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:6px;"></a>
       <div class="agent-chip">
         <div class="agent-avatar" id="agent-avatar">--</div>
         <div>
@@ -517,6 +501,7 @@
       <div class="topbar">
         <div><h1>Painel</h1><p>Visão consolidada dos protocolos que você atende.</p></div>
         <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" id="btn-abrir-busca">🔍 Buscar cliente/equipamento</button>
           <button class="btn btn-primary btn-sm" id="btn-atalho-novo">＋ Novo atendimento</button>
         </div>
       </div>
@@ -536,7 +521,7 @@
     <section class="view" id="view-novo">
       <div class="topbar"><div><h1>Novo atendimento</h1><p>Gera o protocolo e o link do WhatsApp já com a mensagem inicial pronta.</p></div></div>
       <div class="grid-2">
-        <div class="card card-pad form-scroll">
+        <div class="card card-pad">
           <div class="field"><label>Linha que recebeu o chamado</label>
             <select id="f-linha"></select>
           </div>
@@ -545,7 +530,7 @@
           <div class="field"><label>WhatsApp do cliente (celular)</label>
             <div class="phone-group"><span class="phone-prefix">+55</span><input id="f-telefone" inputmode="numeric" placeholder="(21) 98888-7777"/></div>
           </div>
-          <div class="field"><label>Equipamento</label><input id="f-equipamento" placeholder="Digite nome, categoria ou nº de série…" autocomplete="off"/></div>
+          <div class="field"><label>Equipamento</label><input id="f-equipamento" placeholder="Digite para buscar na base ou informe um novo…" autocomplete="off"/></div>
           <div class="field"><label>Descrição inicial do problema</label><textarea id="f-descricao" rows="3" placeholder="Ex: equipamento não liga após queda de energia"></textarea></div>
           <div class="field"><label>Procedimento sugerido (opcional)</label><textarea id="f-procedimento" rows="2" placeholder="Ex: verificar se o cabo de força está bem conectado e reiniciar o equipamento"></textarea></div>
           <div class="field"><label>Outras observações do cliente (opcional)</label><textarea id="f-observacoes" rows="2" placeholder="Ex: cliente relatou que o problema começou após uma queda de energia"></textarea></div>
@@ -573,12 +558,7 @@
             </div>
             <p class="section-title">Mensagem para o cliente</p>
             <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;" id="novo-confirmacao-mensagem"></div>
-            <div style="display:flex;gap:8px;margin-bottom:10px;">
-              <a class="btn btn-whatsapp" id="novo-confirmacao-link" target="labmedic_whatsapp" rel="noopener" style="flex:1;text-decoration:none;text-align:center;">📱 Abrir WhatsApp e enviar ao cliente</a>
-              <button class="btn btn-ghost" id="novo-confirmacao-copiar" title="Copiar a mensagem para colar manualmente em uma janela do WhatsApp já aberta">📋 Copiar</button>
-            </div>
-            <p class="hint" style="margin:-4px 0 10px;">Se você já tem o WhatsApp aberto em outra janela/app e prefere não abrir uma nova aba, use "Copiar" e cole a mensagem por lá.</p>
-            <button class="btn btn-ghost btn-block" id="novo-confirmacao-pdf" style="margin-bottom:10px;">🧾 Gerar PDF do protocolo (A6)</button>
+            <a class="btn btn-whatsapp btn-block" id="novo-confirmacao-link" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar ao cliente</a>
             <p class="hint" style="margin-bottom:10px;">A conversa continua no WhatsApp real — use o botão abaixo para ir registrando novos procedimentos e observações à medida que forem surgindo, ou para encerrar quando o caso for resolvido.</p>
             <button class="btn btn-primary btn-block" id="btn-continuar-atendimento" style="margin-bottom:10px;">Continuar atendimento (procedimentos, observações ou encerrar)</button>
             <button class="btn btn-ghost btn-block" id="btn-concluir-novo">Voltar para a lista de atendimentos</button>
@@ -591,7 +571,7 @@
     <section class="view" id="view-volume">
       <div class="topbar"><div><h1>Solicitar volume de testes</h1><p>Gera um protocolo e o link do WhatsApp para pedir a um colaborador da unidade o volume de testes de determinados equipamentos.</p></div></div>
       <div class="grid-2">
-        <div class="card card-pad form-scroll">
+        <div class="card card-pad">
           <div class="field"><label>Linha que envia o pedido</label>
             <select id="vt-linha"></select>
           </div>
@@ -602,7 +582,7 @@
           </div>
           <div class="field">
             <label>Equipamento(s)</label>
-            <input id="vt-equipamento" placeholder="Digite nome ou nº de série, separando por vírgula…" autocomplete="off"/>
+            <input id="vt-equipamento" placeholder="Digite para buscar na base ou informe manualmente, separando por vírgula…" autocomplete="off"/>
             <p class="hint" style="margin-top:6px;">Clique num resultado da lista ao lado para adicionar; pode informar mais de um separando por vírgula.</p>
           </div>
           <div class="field"><label>Período de referência (opcional)</label><input id="vt-periodo" placeholder="Ex: Julho/2026"/></div>
@@ -631,12 +611,7 @@
             </div>
             <p class="section-title">Mensagem para o colaborador</p>
             <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;" id="vt-confirmacao-mensagem"></div>
-            <div style="display:flex;gap:8px;margin-bottom:10px;">
-              <a class="btn btn-whatsapp" id="vt-confirmacao-link" target="labmedic_whatsapp" rel="noopener" style="flex:1;text-decoration:none;text-align:center;">📱 Abrir WhatsApp e enviar</a>
-              <button class="btn btn-ghost" id="vt-confirmacao-copiar" title="Copiar a mensagem para colar manualmente em uma janela do WhatsApp já aberta">📋 Copiar</button>
-            </div>
-            <p class="hint" style="margin:-4px 0 10px;">Se você já tem o WhatsApp aberto em outra janela/app e prefere não abrir uma nova aba, use "Copiar" e cole a mensagem por lá.</p>
-            <button class="btn btn-ghost btn-block" id="vt-confirmacao-pdf" style="margin-bottom:10px;">🧾 Gerar PDF do protocolo (A6)</button>
+            <a class="btn btn-whatsapp btn-block" id="vt-confirmacao-link" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
             <p class="hint" style="margin-bottom:10px;">Quando o colaborador responder pelo WhatsApp com os números (e a foto/print, se houver), abra este mesmo protocolo para anexar o arquivo recebido.</p>
             <button class="btn btn-primary btn-block" id="btn-ir-protocolo-volume" style="margin-bottom:10px;">Abrir este protocolo para anexar a resposta</button>
             <button class="btn btn-ghost btn-block" id="btn-concluir-volume">Voltar para a lista de atendimentos</button>
@@ -648,6 +623,17 @@
     <!-- ---------- ATENDIMENTOS ATIVOS ---------- -->
     <section class="view" id="view-atendimentos">
       <div class="topbar"><div><h1>Atendimentos ativos</h1><p>Seus chamados em aberto ou em andamento.</p></div></div>
+
+      <!-- Caixa de Entrada: protocolos criados automaticamente pela API do
+           WhatsApp (mensagem de um número sem atendimento aberto) e que
+           ainda não têm um técnico responsável — ver "Fluxo de Conversas
+           Simultâneas", capítulo 4. Só aparece quando há algo para mostrar. -->
+      <div class="card card-pad" id="caixa-entrada-card" style="display:none;margin-bottom:16px;border-color:var(--primary);">
+        <p class="section-title" style="margin-bottom:4px;">📥 Caixa de entrada — não assumidos</p>
+        <p class="section-sub" style="margin-bottom:12px;">Solicitações recebidas pelo WhatsApp que ainda não têm um técnico responsável. Qualquer um pode assumir.</p>
+        <div id="caixa-entrada-wrap"></div>
+      </div>
+
       <div class="card card-pad">
         <div id="atendimentos-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
       </div>
@@ -683,21 +669,6 @@
     <!-- ---------- LINHAS ---------- -->
     <section class="view" id="view-linhas">
       <div class="topbar"><div><h1>Linhas de WhatsApp</h1><p>Números que recebem chamados e geram protocolos.</p></div></div>
-
-      <div class="card card-pad" style="margin-bottom:16px;">
-        <p class="section-title">Modo de entrega das mensagens do WhatsApp</p>
-        <p class="section-sub" style="margin-bottom:12px;">Define como o sistema entrega a mensagem ao clicar em "Abrir WhatsApp e enviar" — direto no aplicativo instalado (sem abrir aba) ou pela aba do WhatsApp Web no navegador.</p>
-        <div class="field" style="max-width:460px;margin-bottom:6px;">
-          <label>Este computador deve enviar…</label>
-          <select id="wa-modo-select">
-            <option value="">Detectar automaticamente (tenta o app; se não responder, usa a aba do navegador)</option>
-            <option value="sim">Sempre pelo aplicativo do WhatsApp instalado (sem abrir aba)</option>
-            <option value="nao">Sempre pela aba do WhatsApp Web no navegador</option>
-          </select>
-        </div>
-        <p class="hint">Se o WhatsApp instalado neste computador abre em janela própria (fora do navegador), escolha "Sempre pelo aplicativo instalado" — essa é a opção recomendada nesse caso, pois o navegador não tem como enxergar aquela janela para reaproveitá-la.</p>
-      </div>
-
       <div class="grid-2">
         <div class="card card-pad" id="linha-form-wrap" style="display:none;">
           <p class="section-title">Cadastrar nova linha</p>
@@ -717,10 +688,7 @@
 
     <!-- ---------- CLIENTES & EQUIPAMENTOS ---------- -->
     <section class="view" id="view-catalogo">
-      <div class="topbar">
-        <div><h1>Clientes &amp; Equipamentos</h1><p>Consulte clientes e os equipamentos vinculados a eles pelas caixas de busca abaixo. Cadastrar, editar ou inativar é reservado ao Supervisor.</p></div>
-        <button class="btn btn-ghost btn-sm" id="btn-abrir-busca" style="display:none;">🔍 Buscar Clientes e Equipamentos</button>
-      </div>
+      <div class="topbar"><div><h1>Clientes &amp; Equipamentos</h1><p>Consulte clientes e os equipamentos vinculados a eles pelas caixas de busca abaixo. Cadastrar, editar ou inativar é reservado ao Supervisor.</p></div></div>
 
       <div class="grid-2" id="catalogo-forms" style="display:none;margin-bottom:16px;">
         <div class="card card-pad">
@@ -953,8 +921,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // Environment Variables no Vercel). Veja /api/config.js e o README.
 // =====================================================================
 let sb = null;
+let supabaseUrlGlobal = null;
 let currentAgente = null;
 let linhasCache = [];
+let linhasComApiCache = new Set(); // ids de linhas com número já conectado à API do WhatsApp (whatsapp_numeros.ativo)
+let atendimentosComMensagemNova = new Set(); // ids de atendimentos com mensagem recebida ainda não vista (ver Realtime)
 let agentesCache = [];
 let historicoDataAtual = [];
 let supervisaoDataAtual = [];
@@ -979,6 +950,7 @@ async function iniciarSupabase(){
     if(!resp.ok) throw new Error('config indisponível');
     const cfg = await resp.json();
     if(!cfg.url || !cfg.anonKey) throw new Error('config incompleta');
+    supabaseUrlGlobal = cfg.url; // reaproveitado pelas chamadas às Edge Functions do WhatsApp (ver enviarViaWhatsAppApi)
     // sessionStorage (em vez do padrão localStorage) faz a sessão durar
     // só enquanto esta aba estiver aberta — o navegador limpa
     // automaticamente ao fechá-la, então não é preciso nenhum código
@@ -1065,37 +1037,8 @@ function comDDI55(valorMascarado){
   return d; // já veio com DDI, ou está incompleto — mantém como está
 }
 
-// Em desktop apontamos DIRETO para web.whatsapp.com/send: o wa.me abre
-// uma página intermediária ("Continuar para o chat") que, ao ser clicada,
-// abre o WhatsApp Web numa ABA NOVA — era a causa real da aba duplicada
-// mesmo com a sessão já aberta. Em celular mantemos o wa.me, que é quem
-// consegue acionar o aplicativo nativo.
-const ehMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(navigator.userAgent);
-
 function waLink(numero, texto){
-  const n = soDigitos(numero), t = encodeURIComponent(texto);
-  return ehMobile
-    ? `https://wa.me/${n}?text=${t}`
-    : `https://web.whatsapp.com/send?phone=${n}&text=${t}&type=phone_number&app_absent=0`;
-}
-
-// Link para o APLICATIVO instalado (WhatsApp Desktop / app nativo). Quando
-// o sistema tem o WhatsApp instalado, este esquema entrega a mensagem à
-// sessão JÁ ABERTA do aplicativo — sem criar nenhuma aba no navegador.
-function waAppLink(numero, texto){
-  return `whatsapp://send?phone=${soDigitos(numero)}&text=${encodeURIComponent(texto)}`;
-}
-
-// Extrai número/texto de qualquer URL do WhatsApp (wa.me ou web.whatsapp.com),
-// para que um <a href="..."> também possa ser redirecionado ao aplicativo.
-function waDadosDaURL(url){
-  try{
-    const u = new URL(url, location.href);
-    const texto = u.searchParams.get('text') || '';
-    let numero = u.searchParams.get('phone') || '';
-    if(!numero && /(^|\.)wa\.me$/i.test(u.hostname)) numero = u.pathname.replace(/\D/g,'');
-    return { numero: soDigitos(numero), texto };
-  }catch(_){ return null; }
+  return `https://wa.me/${soDigitos(numero)}?text=${encodeURIComponent(texto)}`;
 }
 
 // Nome fixo de "janela" usado em todo envio ao WhatsApp: passar sempre
@@ -1105,232 +1048,35 @@ function waDadosDaURL(url){
 // não força o agente a reconectar o WhatsApp Web de novo.
 const WA_TAB = 'labmedic_whatsapp';
 
-// Preferência do modo de entrega ao WhatsApp, por máquina/navegador:
-// 'sim' = entrega direto ao aplicativo instalado (whatsapp://), sem abrir
-//         nenhuma aba/janela do navegador — é o modo certo quando o
-//         WhatsApp instalado abre em janela própria, fora do navegador
-//         (app nativo/desktop), pois nesse caso o navegador não tem
-//         nenhuma aba dele para reaproveitar.
-// 'nao' = usa a aba única do WhatsApp Web dentro do navegador.
-// null  = ainda não definido: tenta detectar automaticamente na primeira vez
-//         (a detecção automática por si só é pouco confiável em navegadores
-//         recentes — por isso também existe o botão manual na barra
-//         lateral, que define isso direto, sem depender de detecção).
-const WA_PREF_APP = 'labmedic_wa_app_disponivel';
-function waPrefApp(){ try{ return localStorage.getItem(WA_PREF_APP); }catch(_){ return null; } }
-function setWaPrefApp(v){ try{ localStorage.setItem(WA_PREF_APP, v); }catch(_){} }
-
-// Botão da barra lateral que alterna o modo manualmente. Como o
-// navegador não tem como enxergar uma janela do app nativo do WhatsApp
-// (ela roda fora do navegador), a forma mais confiável de garantir que
-// o sistema entregue direto ao app — sem nunca abrir aba — é deixar o
-// próprio agente confirmar isso uma vez aqui, em vez de depender só da
-// detecção automática.
-function atualizarBotaoModoWhats(){
-  const btn = $('#btn-wa-modo');
-  const select = $('#wa-modo-select');
-  const modo = waPrefApp() || '';
-  if(select) select.value = modo;
-  if(!btn) return;
-  if(modo === 'sim'){
-    btn.innerHTML = '📱 <span>App do WhatsApp instalado</span>';
-    btn.title = 'Mensagens sendo entregues direto ao aplicativo instalado, sem abrir aba. Clique para ajustar em Linhas WhatsApp.';
-  }else if(modo === 'nao'){
-    btn.innerHTML = '🌐 <span>Aba do WhatsApp Web</span>';
-    btn.title = 'Mensagens sendo entregues pela aba do WhatsApp Web no navegador. Clique para ajustar em Linhas WhatsApp.';
-  }else{
-    btn.innerHTML = '↻ <span>Detecção automática do WhatsApp</span>';
-    btn.title = 'Ainda não definido — o sistema tenta detectar sozinho. Clique para escolher manualmente em Linhas WhatsApp.';
-  }
-}
-document.addEventListener('click', (ev)=>{
-  const btn = ev.target.closest && ev.target.closest('#btn-wa-modo');
-  if(!btn) return;
-  ev.preventDefault();
-  switchView('linhas');
-});
-document.addEventListener('change', (ev)=>{
-  const sel = ev.target.closest && ev.target.closest('#wa-modo-select');
-  if(!sel) return;
-  if(sel.value) setWaPrefApp(sel.value);
-  else{ try{ localStorage.removeItem(WA_PREF_APP); }catch(_){} }
-  atualizarBotaoModoWhats();
-  toast('Preferência de envio ao WhatsApp atualizada.');
-});
-
-// Referência viva da aba/janela do WhatsApp aberta por esta sessão.
-// Só passar o mesmo `name` para window.open() não basta: quando a
-// chamada acontece depois de um await (ou quando o navegador considera
-// que a janela anterior "perdeu" o vínculo), alguns navegadores abrem
-// uma janela nova. Guardando a referência, reaproveitamos SEMPRE a
-// mesma aba enquanto ela existir — só navegando e focando.
-let waWinRef = null;
-
-function waTabViva(){
-  try{ return !!(waWinRef && !waWinRef.closed); }catch(_){ return false; }
-}
-
-// Abre (ou reaproveita) a aba do WhatsApp de forma SÍNCRONA, ainda dentro
-// do handler do clique — antes de qualquer await de upload/insert.
-// Quando já sabemos que o aplicativo instalado atende (preferência 'sim'),
-// nem abrimos aba: o envio vai direto para a sessão do app.
+// Abre (ou reaproveita) a aba nomeada do WhatsApp de forma SÍNCRONA, ainda
+// dentro da própria função do clique do usuário, antes de qualquer await.
+// É essa sincronia que faz o navegador reconhecer a chamada como resultado
+// direto de um clique — sem isso (ex: chamando window.open só depois de um
+// await de upload/insert no banco), a maioria dos navegadores deixa de
+// considerar "ação do usuário" e passa a abrir uma aba/janela nova a cada
+// clique em vez de reaproveitar a mesma, mesmo com o mesmo nome de destino.
+// Uso: capturar a referência no início do handler (ex: no clique do botão),
+// e só navegar essa referência (via winWhats.location.href = ...) depois
+// que os dados assíncronos estiverem prontos.
 function abrirAbaWhatsAppSincrono(){
-  if(!ehMobile && waPrefApp() === 'sim') return null;
   try{
-    if(waTabViva()){
-      try{ waWinRef.focus(); }catch(_){}
-      return waWinRef;
-    }
-    waWinRef = window.open('', WA_TAB);
-    return waWinRef;
+    return window.open('', WA_TAB);
   }catch(err){
-    console.warn('[whatsapp] não foi possível abrir/reaproveitar a aba:', err);
+    console.warn('[whatsapp] não foi possível abrir a aba antecipadamente:', err);
     return null;
   }
 }
-
-// Navega a aba única do WhatsApp Web (ou abre uma, se não houver nenhuma).
-function navegarNaAbaWeb(url, winPreAberta){
-  const alvo = (winPreAberta && !winPreAberta.closed) ? winPreAberta : (waTabViva() ? waWinRef : null);
-  if(alvo){
-    waWinRef = alvo;
-    try{
-      alvo.location.href = url;
-      alvo.focus();
-      return alvo;
-    }catch(err){
-      console.warn('[whatsapp] falha ao navegar a aba existente:', err);
-    }
-  }
-  waWinRef = window.open(url, WA_TAB);
-  if(!waWinRef) window.location.href = url; // pop-up bloqueado: último recurso
-  return waWinRef;
-}
-
-// Entrega direta ao aplicativo instalado, sem abrir nenhuma aba: dispara
-// o esquema whatsapp:// através de um link temporário "clicado" via
-// JavaScript (mais confiável do que navegar um iframe — navegadores
-// recentes costumam bloquear silenciosamente a navegação de um iframe
-// para um esquema que não seja http/https, então o iframe muitas vezes
-// nunca chegava a acionar o aplicativo).
-function dispararAppNativo(numero, texto){
-  const a = document.createElement('a');
-  a.href = waAppLink(numero, texto);
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  try{ a.click(); }
-  catch(_){ /* alguns navegadores exigem window.location como alternativa */ try{ window.location.href = a.href; }catch(_){} }
-  setTimeout(()=>{ try{ a.remove(); }catch(_){} }, 0);
-}
-
-// Tenta entregar ao APLICATIVO instalado. Se o sistema assumir o esquema
-// whatsapp:// (a janela do navegador perde o foco, ou fica em segundo
-// plano), consideramos entregue e fechamos a aba em branco que havia
-// sido pré-aberta. Se nada acontecer em ~1,5s, caímos para a aba única
-// do WhatsApp Web.
-function tentarAppNativo(numero, texto, winPreAberta, urlWebFallback){
-  let resolvido = false;
-  const limpar = ()=>{
-    window.removeEventListener('blur', aoPerderFoco);
-    document.removeEventListener('visibilitychange', aoEsconder);
-    window.removeEventListener('pagehide', aoPerderFoco);
-  };
-  const sucesso = ()=>{
-    if(resolvido) return; resolvido = true;
-    setWaPrefApp('sim');
-    atualizarBotaoModoWhats();
-    // o app assumiu: a aba em branco pré-aberta não serve para nada
-    if(winPreAberta && !winPreAberta.closed && !waTabViva()){ try{ winPreAberta.close(); }catch(_){} }
-    limpar();
-  };
-  const aoPerderFoco = ()=> sucesso();
-  const aoEsconder = ()=>{ if(document.hidden) sucesso(); };
-
-  window.addEventListener('blur', aoPerderFoco);
-  document.addEventListener('visibilitychange', aoEsconder);
-  window.addEventListener('pagehide', aoPerderFoco);
-
-  dispararAppNativo(numero, texto);
-
-  setTimeout(()=>{
-    if(resolvido) return; resolvido = true;
-    setWaPrefApp('nao');
-    atualizarBotaoModoWhats();
-    limpar();
-    navegarNaAbaWeb(urlWebFallback, winPreAberta);
-  }, 1500);
-}
-
-// Ponto único de saída para o WhatsApp:
-// 1) aplicativo instalado (não cria aba alguma, usa a sessão já aberta);
-// 2) senão, a MESMA aba do WhatsApp Web, sempre reaproveitada.
-function abrirWhatsAppURL(url, winPreAberta){
-  const dados = waDadosDaURL(url);
-  if(!ehMobile && dados && dados.numero && waPrefApp() !== 'nao'){
-    if(waPrefApp() === 'sim'){
-      // já sabemos que o app atende: entrega direta, sem abas
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      document.body.appendChild(iframe);
-      try{ iframe.contentWindow.location.href = waAppLink(dados.numero, dados.texto); }catch(_){}
-      setTimeout(()=>{ try{ iframe.remove(); }catch(_){} }, 2000);
-      if(winPreAberta && !winPreAberta.closed && !waTabViva()){ try{ winPreAberta.close(); }catch(_){} }
-      return null;
-    }
-    tentarAppNativo(dados.numero, dados.texto, winPreAberta, url);
-    return null;
-  }
-  return navegarNaAbaWeb(url, winPreAberta);
-}
-
+// navega a aba já aberta para o link do WhatsApp; se por algum motivo a
+// referência não existir mais (aba fechada pelo usuário, bloqueador etc.),
+// cai de volta no window.open normal como último recurso.
 function navegarAbaWhatsApp(winWhats, numero, texto){
-  abrirWhatsAppURL(waLink(numero, texto), winWhats);
-}
-
-// Fallback manual: copia a mensagem para a área de transferência, para o
-// agente colar em QUALQUER janela do WhatsApp que já esteja aberta —
-// inclusive o app instalado como PWA/desktop, que o navegador não tem
-// como enxergar nem controlar (ver nota sobre limitação de navegador
-// acima da função abrirAbaWhatsAppSincrono).
-async function copiarTexto(texto, botao){
-  const rotuloOriginal = botao ? botao.textContent : null;
-  try{
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      await navigator.clipboard.writeText(texto);
-    }else{
-      const ta = document.createElement('textarea');
-      ta.value = texto; ta.style.position='fixed'; ta.style.opacity='0';
-      document.body.appendChild(ta); ta.select();
-      document.execCommand('copy');
-      ta.remove();
-    }
-    toast('Mensagem copiada — cole na janela do WhatsApp já aberta.');
-    if(botao){ botao.textContent = '✅ Copiado'; setTimeout(()=>{ botao.textContent = rotuloOriginal; }, 1800); }
-  }catch(err){
-    console.warn('[copiar] falha ao copiar para a área de transferência:', err);
-    toast('Não foi possível copiar automaticamente. Selecione a mensagem acima e copie manualmente.');
+  const url = waLink(numero, texto);
+  if(winWhats && !winWhats.closed){
+    winWhats.location.href = url;
+  }else{
+    window.open(url, WA_TAB);
   }
 }
-
-// Qualquer link do app que aponte para a aba do WhatsApp passa pelo
-// mesmo controle — sem isso, o clique no <a target="..."> podia abrir
-// uma janela nova em vez de reusar a sessão já aberta.
-document.addEventListener('click', (ev)=>{
-  const a = ev.target.closest && ev.target.closest('a[target="'+WA_TAB+'"]');
-  if(!a || !a.href) return;
-  ev.preventDefault();
-  abrirWhatsAppURL(a.href);
-});
-
-// Botões "Copiar" das telas de confirmação (Novo atendimento / Solicitar
-// volume de testes) — leem a mensagem já exibida na prévia e copiam para
-// a área de transferência, sem depender de abrir nenhuma janela.
-document.addEventListener('click', (ev)=>{
-  const btnNovo = ev.target.closest && ev.target.closest('#novo-confirmacao-copiar');
-  if(btnNovo){ copiarTexto($('#novo-confirmacao-mensagem').textContent, btnNovo); return; }
-  const btnVt = ev.target.closest && ev.target.closest('#vt-confirmacao-copiar');
-  if(btnVt){ copiarTexto($('#vt-confirmacao-mensagem').textContent, btnVt); return; }
-});
 
 function fmtData(iso){
   const d = new Date(iso);
@@ -1494,7 +1240,6 @@ async function afterLogin(session){
       const navSup = $('#nav-supervisao'); if(navSup) navSup.style.display = 'flex';
       const navAg = $('#nav-agentes'); if(navAg) navAg.style.display = 'flex';
       const navCat = $('#nav-categorias'); if(navCat) navCat.style.display = 'flex';
-      const btnBusca = $('#btn-abrir-busca'); if(btnBusca) btnBusca.style.display = 'inline-flex';
       setText('#agent-role-badge', '· Supervisor');
       try{
         await carregarAgentesParaFiltro();
@@ -1506,9 +1251,10 @@ async function afterLogin(session){
     $('#splash-view').style.display = 'none';
     $('#login-view').style.display = 'none';
     $('#app-view').style.display = 'block';
-    atualizarBotaoModoWhats();
 
     try{ await carregarLinhas(); }catch(e){ console.error('[login] erro ao carregar linhas:', e); }
+    try{ await carregarLinhasComApi(); }catch(e){ console.error('[login] erro ao carregar linhas com API do WhatsApp:', e); }
+    try{ iniciarRealtimeWhatsApp(); }catch(e){ console.error('[login] erro ao iniciar Realtime do WhatsApp:', e); }
     try{ await renderDashboard(); }catch(e){ console.error('[login] erro ao renderizar painel:', e); }
 
   }catch(err){
@@ -1616,6 +1362,78 @@ async function carregarLinhas(){
   if(selVolume) selVolume.innerHTML = linhasCache.map(l=>`<option value="${l.id}">${l.nome} (${l.numero})</option>`).join('') || '<option value="">Nenhuma linha cadastrada</option>';
   selHist.innerHTML = '<option value="">Todas</option>' + linhasCache.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');
   if(selSup) selSup.innerHTML = '<option value="">Todas</option>' + linhasCache.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');
+}
+
+// ---------------- INTEGRAÇÃO API DO WHATSAPP ----------------
+// A partir daqui, uma linha pode operar em dois canais:
+//  - 'whatsapp_api': o envio passa pela Edge Function whatsapp-enviar, que
+//    fala direto com a Meta e já grava a interação sozinha.
+//  - 'manual' (comportamento já existente): a aplicação abre o link do
+//    WhatsApp (wa.me/web.whatsapp.com) e grava a interação aqui mesmo.
+// Mantemos os dois caminhos lado a lado de propósito — permite migrar linha
+// por linha, com o modo manual servindo de contingência durante a
+// estabilização, exatamente como recomendado no Plano de Migração.
+async function carregarLinhasComApi(){
+  const { data, error } = await sb.from('whatsapp_numeros').select('linha_id').eq('ativo', true);
+  if(error){ console.error('[whatsapp-api] erro ao carregar linhas com API ativa:', error); return; }
+  linhasComApiCache = new Set((data || []).map(r => r.linha_id));
+}
+
+function linhaTemApiAtiva(linhaId){
+  return linhasComApiCache.has(linhaId);
+}
+
+// Envia uma mensagem através da Edge Function whatsapp-enviar (API oficial da
+// Meta) em vez de abrir um link do WhatsApp. A própria função já grava a
+// interação e o log em mensagens_whatsapp — por isso, ao usar este caminho,
+// a aplicação NÃO deve inserir a interação de novo (ver os pontos de chamada
+// em "Novo Atendimento", "Solicitar Volume de Testes", "Salvar e enviar" e
+// "Transferir/Reenviar").
+async function enviarViaWhatsAppApi({ atendimentoId, telefone, texto, agenteId }){
+  const { data: sessao } = await sb.auth.getSession();
+  const token = sessao?.session?.access_token;
+  if(!token) throw new Error('Sessão expirada — faça login novamente.');
+
+  const resp = await fetch(`${supabaseUrlGlobal}/functions/v1/whatsapp-enviar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ atendimento_id: atendimentoId, telefone, texto, agente_id: agenteId ?? null })
+  });
+  const resultado = await resp.json().catch(()=> ({}));
+  if(!resp.ok || !resultado?.sucesso){
+    throw new Error(resultado?.erro || 'Falha ao enviar a mensagem pela API do WhatsApp.');
+  }
+  return resultado;
+}
+
+// Mantém a tela atualizada sozinha quando chegam mensagens/protocolos novos
+// pela API do WhatsApp — sem precisar recarregar a página (ver Fluxo de
+// Conversas Simultâneas, capítulo 3.1 e 3.2). Chamada uma única vez, logo
+// após o login.
+function iniciarRealtimeWhatsApp(){
+  if(!sb) return;
+  sb.channel('whatsapp-realtime')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'atendimentos' }, (payload) => {
+      // protocolo novo, criado sozinho pelo webhook a partir de um telefone
+      // sem atendimento aberto (Cenário B) — avisa e atualiza a fila.
+      if(payload.new?.canal === 'whatsapp_api' && !payload.new?.agente_id){
+        toast('Nova solicitação recebida pelo WhatsApp — protocolo '+payload.new.protocolo);
+        atualizarListaAtivaEmSegundoPlano();
+      }
+    })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'interacoes', filter: 'tipo=eq.mensagem_recebida' }, (payload) => {
+      const atendimentoId = payload.new?.atendimento_id;
+      if(!atendimentoId) return;
+      if(atendimentoAtualId === atendimentoId){
+        // o técnico já está com este protocolo aberto — atualiza o
+        // histórico na hora, sem precisar de nenhuma ação manual.
+        abrirDetalhe(atendimentoId);
+      }else{
+        atendimentosComMensagemNova.add(atendimentoId);
+      }
+      atualizarListaAtivaEmSegundoPlano();
+    })
+    .subscribe();
 }
 
 $('#btn-criar-linha').addEventListener('click', async ()=>{
@@ -2116,24 +1934,17 @@ async function executarBusca(){
   });
 }
 
-function formatarEquipamentoComSerie(equip){
-  if(!equip) return '';
-  const nome = (equip.nome || '').trim();
-  const serie = (equip.numero_serie || '').trim();
-  return serie ? `${nome} (série: ${serie})` : nome;
-}
-
 function selecionarDoCatalogo(equip){
   catalogoSelecionado = { cliente_id: equip.clientes?.id || null, equipamento_id: equip.id };
   $('#f-nome').value = equip.clientes?.nome || '';
   $('#f-cliente-grupo').value = equip.clientes?.cliente_grupo || '';
-  $('#f-equipamento').value = formatarEquipamentoComSerie(equip);
+  $('#f-equipamento').value = equip.nome || '';
   if(equip.clientes?.telefone){
     $('#f-telefone').value = formatarCelularBR(equip.clientes.telefone.replace(/^55/, ''));
   }
   const hint = $('#catalogo-selecionado-hint');
   hint.style.display = 'block';
-  hint.textContent = `✓ Selecionado do catálogo: ${formatarEquipamentoComSerie(equip)}${equip.clientes?.nome ? ' — ' + equip.clientes.nome : ''}`;
+  hint.textContent = `✓ Selecionado do catálogo: ${equip.nome} — ${equip.clientes?.nome || ''}`;
   fecharBuscaCatalogo();
   esconderResultadosNovo();
   switchView('novo');
@@ -2450,11 +2261,11 @@ $('#f-equipamento').addEventListener('input', ()=>{
   if(q.length < 2){ esconderResultadosNovo(); return; }
   timerBuscaEquipNovo = setTimeout(async ()=>{
     const { data } = await sb.from('equipamentos').select('*, clientes(id, nome, cliente_grupo, telefone)').eq('ativo', true)
-      .or(`nome.ilike.%${q}%,numero_serie.ilike.%${q}%`).limit(20);
+      .ilike('nome', `%${q}%`).limit(20);
     // reforça, no lado do cliente, a busca sem acento sobre o que o
     // banco já trouxe (o ILIKE sozinho não ignora acentuação)
     const alvo = normalizarTexto(q);
-    const filtrados = (data||[]).filter(e => normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo) || normalizarTexto(e.numero_serie).includes(alvo));
+    const filtrados = (data||[]).filter(e => normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo));
     renderResultadosBuscaNovo('equipamento', filtrados.length ? filtrados : (data||[]));
   }, 280);
 });
@@ -2475,9 +2286,7 @@ $('#f-equipamento').addEventListener('blur', ()=>{
     const texto = $('#f-equipamento').value.trim();
     if(!texto || !catalogoSelecionado.cliente_id) return;
     const alvo = normalizarTexto(texto);
-    const match = equipamentosDoClienteCache.find(e =>
-      normalizarTexto(e.nome) === alvo || normalizarTexto(formatarEquipamentoComSerie(e)) === alvo
-    );
+    const match = equipamentosDoClienteCache.find(e => normalizarTexto(e.nome) === alvo);
     if(match) selecionarDoCatalogo(match);
   }, 200);
 });
@@ -2500,13 +2309,14 @@ $('#btn-cancelar-novo').addEventListener('click', ()=>{
 });
 
 $('#btn-criar-atendimento').addEventListener('click', async ()=>{
-  // aberta já aqui, de forma síncrona (ver abrirAbaWhatsAppSincrono) —
-  // evita que o navegador trate a navegação abaixo (que só acontece
-  // depois dos awaits de gravação no banco) como pop-up bloqueado ou
-  // abra uma nova janela em vez de reaproveitar a mesma aba.
-  const winWhats = abrirAbaWhatsAppSincrono();
-
   const linha_id = $('#f-linha').value;
+  const usaApi = linhaTemApiAtiva(linha_id);
+  // só abre a aba do WhatsApp se esta linha ainda estiver no modo manual —
+  // no modo API a mensagem sai direto pela Edge Function, sem abrir nada
+  // (ver abrirAbaWhatsAppSincrono/navegarAbaWhatsApp e o capítulo 5 da
+  // Proposta Técnica para o porquê de abrir isso de forma síncrona).
+  const winWhats = usaApi ? null : abrirAbaWhatsAppSincrono();
+
   const cliente_nome = $('#f-nome').value.trim();
   const cliente_grupo = $('#f-cliente-grupo').value.trim();
   const cliente_telefone = comDDI55($('#f-telefone').value);
@@ -2525,16 +2335,30 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
     const { data, error } = await sb.from('atendimentos').insert({
       linha_id, cliente_nome, cliente_grupo: cliente_grupo||null, cliente_telefone, equipamento, descricao_problema,
       cliente_id: catalogoSelecionado.cliente_id, equipamento_id: catalogoSelecionado.equipamento_id,
-      status: 'aberto', agente_id: currentAgente.id
+      status: 'aberto', agente_id: currentAgente.id,
+      canal: usaApi ? 'whatsapp_api' : 'manual'
     }).select().single();
 
     if(error){ toast('Erro ao criar atendimento: '+error.message); if(winWhats && !winWhats.closed) winWhats.close(); return; }
 
     const mensagem = `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${cliente_nome? 'Unidade: '+cliente_nome+'\n':''}${cliente_grupo? 'Cliente: '+cliente_grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}${procedimento_sugerido? 'Procedimento sugerido: '+procedimento_sugerido+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
 
-    await sb.from('interacoes').insert({
-      atendimento_id: data.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: mensagem
-    });
+    let envioApiFalhou = false;
+    if(usaApi){
+      // a Edge Function já grava a interação "mensagem" sozinha — não
+      // duplicamos o insert aqui, diferente do caminho manual abaixo.
+      try{
+        await enviarViaWhatsAppApi({ atendimentoId: data.id, telefone: cliente_telefone, texto: mensagem, agenteId: currentAgente.id });
+      }catch(errEnvio){
+        envioApiFalhou = true;
+        console.error('[criar-atendimento] falha ao enviar via API do WhatsApp:', errEnvio);
+        toast('Protocolo criado, mas a mensagem não pôde ser enviada automaticamente: '+errEnvio.message);
+      }
+    }else{
+      await sb.from('interacoes').insert({
+        atendimento_id: data.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: mensagem
+      });
+    }
     if(procedimento_sugerido){
       await sb.from('interacoes').insert({
         atendimento_id: data.id, agente_id: currentAgente.id, tipo:'procedimento', conteudo: procedimento_sugerido
@@ -2546,19 +2370,40 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
       });
     }
 
-    toast('Protocolo '+data.protocolo+' criado!');
+    toast('Protocolo '+data.protocolo+' criado!'+(usaApi && !envioApiFalhou ? ' Mensagem enviada automaticamente.' : ''));
 
-    // navega a aba já aberta no início do clique — sem isso, cai de
-    // volta no window.open normal (ver navegarAbaWhatsApp).
-    navegarAbaWhatsApp(winWhats, cliente_telefone, mensagem);
+    if(!usaApi){
+      // navega a aba já aberta no início do clique — sem isso, cai de
+      // volta no window.open normal (ver navegarAbaWhatsApp).
+      navegarAbaWhatsApp(winWhats, cliente_telefone, mensagem);
+    }
 
     $('#novo-form-preview').style.display = 'none';
     $('#novo-confirmacao').style.display = 'block';
     $('#novo-confirmacao-protocolo').textContent = data.protocolo;
     $('#novo-confirmacao-mensagem').textContent = mensagem;
     const link = $('#novo-confirmacao-link');
-    link.href = waLink(cliente_telefone, mensagem);
-    link.target = WA_TAB;
+    if(usaApi && !envioApiFalhou){
+      // já foi enviada pela API — o botão de abrir o WhatsApp deixa de
+      // fazer sentido aqui, então é escondido e trocado por um aviso.
+      link.style.display = 'none';
+      let avisoApi = $('#novo-confirmacao-aviso-api');
+      if(!avisoApi){
+        avisoApi = document.createElement('p');
+        avisoApi.id = 'novo-confirmacao-aviso-api';
+        avisoApi.className = 'hint';
+        avisoApi.style.marginBottom = '10px';
+        link.insertAdjacentElement('beforebegin', avisoApi);
+      }
+      avisoApi.textContent = '✓ Mensagem já enviada automaticamente pela API do WhatsApp — nada a fazer aqui.';
+      avisoApi.style.display = 'block';
+    }else{
+      link.style.display = '';
+      const avisoApi = $('#novo-confirmacao-aviso-api');
+      if(avisoApi) avisoApi.style.display = 'none';
+      link.href = waLink(cliente_telefone, mensagem);
+      link.target = WA_TAB;
+    }
     ultimoAtendimentoCriadoId = data.id;
 
   }catch(err){
@@ -2638,7 +2483,7 @@ function renderResultadosBuscaVolume(tipo, itens, tituloExtra){
     el.addEventListener('click', ()=>{
       const item = itens[+el.dataset.idx];
       if(tipo==='cliente') selecionarUnidadeVolume(item);
-      else adicionarEquipamentoVolume(item);
+      else adicionarEquipamentoVolume(item.nome);
     });
   });
   painel.style.display = 'block';
@@ -2720,7 +2565,7 @@ $('#vt-equipamento').addEventListener('input', ()=>{
     if(!termoAtual){ renderResultadosBuscaVolume('equipamento', vtEquipamentosDoClienteCache, `Equipamentos de ${$('#vt-unidade').value.trim()}`); return; }
     const alvo = normalizarTexto(termoAtual);
     const filtrados = vtEquipamentosDoClienteCache.filter(e =>
-      normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo) || normalizarTexto(e.numero_serie).includes(alvo)
+      normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo)
     );
     renderResultadosBuscaVolume('equipamento', filtrados, `Equipamentos de ${$('#vt-unidade').value.trim()}`);
     return;
@@ -2729,9 +2574,9 @@ $('#vt-equipamento').addEventListener('input', ()=>{
   if(termoAtual.length < 2){ esconderResultadosVolume(); return; }
   timerBuscaEquipVolume = setTimeout(async ()=>{
     const { data } = await sb.from('equipamentos').select('*, clientes(id, nome)').eq('ativo', true)
-      .or(`nome.ilike.%${termoAtual}%,numero_serie.ilike.%${termoAtual}%`).limit(20);
+      .ilike('nome', `%${termoAtual}%`).limit(20);
     const alvo = normalizarTexto(termoAtual);
-    const filtrados = (data||[]).filter(e => normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo) || normalizarTexto(e.numero_serie).includes(alvo));
+    const filtrados = (data||[]).filter(e => normalizarTexto(e.nome).includes(alvo) || normalizarTexto(e.categoria).includes(alvo));
     renderResultadosBuscaVolume('equipamento', filtrados.length ? filtrados : (data||[]));
   }, 280);
 });
@@ -2739,16 +2584,13 @@ $('#vt-equipamento').addEventListener('input', ()=>{
 // clicar num resultado da busca substitui o termo parcial que o agente
 // estava digitando (depois da última vírgula) pelo nome escolhido, e já
 // deixa uma vírgula pronta para adicionar o próximo equipamento
-function adicionarEquipamentoVolume(equip){
+function adicionarEquipamentoVolume(nome){
   const campo = $('#vt-equipamento');
   let partes = campo.value.split(',').map(p=>p.trim()).filter(Boolean);
   if(partes.length && campo.value.trim() && !campo.value.trim().endsWith(',')){
     partes.pop();
   }
-  const nome = equip?.nome || equip;
-  const serie = equip?.numero_serie;
-  const texto = serie ? `${nome} (série: ${serie})` : nome;
-  if(!partes.some(p => normalizarTexto(p) === normalizarTexto(texto))) partes.push(texto);
+  if(!partes.some(p => normalizarTexto(p) === normalizarTexto(nome))) partes.push(nome);
   campo.value = partes.join(', ') + ', ';
   $('#vt-preview-text').textContent = montarMensagemVolume();
   campo.focus();
@@ -2772,11 +2614,12 @@ $('#btn-cancelar-volume').addEventListener('click', ()=>{
 });
 
 $('#btn-criar-volume').addEventListener('click', async ()=>{
-  // ver comentário equivalente em #btn-criar-atendimento: precisa ser
-  // aberta aqui, ainda de forma síncrona no clique.
-  const winWhats = abrirAbaWhatsAppSincrono();
-
   const linha_id = $('#vt-linha').value;
+  const usaApi = linhaTemApiAtiva(linha_id);
+  // ver comentário equivalente em #btn-criar-atendimento: só abre a aba do
+  // WhatsApp no modo manual — no modo API a mensagem sai direto pela função.
+  const winWhats = usaApi ? null : abrirAbaWhatsAppSincrono();
+
   const unidade = $('#vt-unidade').value.trim();
   const colaborador = $('#vt-colaborador').value.trim();
   const telefone = comDDI55($('#vt-telefone').value);
@@ -2809,30 +2652,66 @@ $('#btn-criar-volume').addEventListener('click', async ()=>{
       linha_id, cliente_nome: unidade, cliente_grupo: 'Colaborador: '+colaborador, cliente_telefone: telefone,
       equipamento: equipamento || null, descricao_problema: descricao,
       cliente_id: vtSelecionado.cliente_id, equipamento_id: equipamentoIdCorrespondente,
-      status: 'aberto', agente_id: currentAgente.id
+      status: 'aberto', agente_id: currentAgente.id,
+      canal: usaApi ? 'whatsapp_api' : 'manual'
     }).select().single();
 
     if(error){ toast('Erro ao criar solicitação: '+error.message); if(winWhats && !winWhats.closed) winWhats.close(); return; }
 
     const mensagem = `Olá! 👋\n\nSolicitação interna de volume de testes.\nProtocolo: ${data.protocolo}\nUnidade: ${unidade}\nColaborador: ${colaborador}\n${equipamento?'Equipamento(s): '+equipamento+'\n':''}${periodo?'Período de referência: '+periodo+'\n':''}\nPor favor, nos informe o volume de testes realizados${periodo?' no período':''} pelo(s) equipamento(s) acima. Se possível, envie também o print/foto do contador ou relatório — vamos anexar aqui no protocolo assim que recebermos.${mensagemExtra?'\n\n'+mensagemExtra:''}`;
 
-    await sb.from('interacoes').insert({
-      atendimento_id: data.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: mensagem,
-      destinatario_telefone: telefone, destinatario_nome: colaborador
-    });
+    let envioApiFalhou = false;
+    if(usaApi){
+      // atenção: este fluxo é sempre iniciado pelo agente (o colaborador
+      // nunca escreveu antes), então, fora de uma janela de 24h já aberta
+      // com aquele número, a Meta pode recusar mensagem de texto livre e
+      // exigir um template aprovado (Fase 6) — o catch abaixo trata isso
+      // com uma falha visível, sem travar a criação do protocolo.
+      try{
+        await enviarViaWhatsAppApi({ atendimentoId: data.id, telefone, texto: mensagem, agenteId: currentAgente.id });
+      }catch(errEnvio){
+        envioApiFalhou = true;
+        console.error('[criar-volume] falha ao enviar via API do WhatsApp:', errEnvio);
+        toast('Protocolo criado, mas a mensagem não pôde ser enviada automaticamente: '+errEnvio.message);
+      }
+    }else{
+      await sb.from('interacoes').insert({
+        atendimento_id: data.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: mensagem,
+        destinatario_telefone: telefone, destinatario_nome: colaborador
+      });
+    }
 
-    toast('Protocolo '+data.protocolo+' criado!');
+    toast('Protocolo '+data.protocolo+' criado!'+(usaApi && !envioApiFalhou ? ' Mensagem enviada automaticamente.' : ''));
 
-    // navega a aba já aberta no início do clique.
-    navegarAbaWhatsApp(winWhats, telefone, mensagem);
+    if(!usaApi){
+      // navega a aba já aberta no início do clique.
+      navegarAbaWhatsApp(winWhats, telefone, mensagem);
+    }
 
     $('#volume-form-preview').style.display = 'none';
     $('#vt-confirmacao').style.display = 'block';
     $('#vt-confirmacao-protocolo').textContent = data.protocolo;
     $('#vt-confirmacao-mensagem').textContent = mensagem;
     const link = $('#vt-confirmacao-link');
-    link.href = waLink(telefone, mensagem);
-    link.target = WA_TAB;
+    if(usaApi && !envioApiFalhou){
+      link.style.display = 'none';
+      let avisoApi = $('#vt-confirmacao-aviso-api');
+      if(!avisoApi){
+        avisoApi = document.createElement('p');
+        avisoApi.id = 'vt-confirmacao-aviso-api';
+        avisoApi.className = 'hint';
+        avisoApi.style.marginBottom = '10px';
+        link.insertAdjacentElement('beforebegin', avisoApi);
+      }
+      avisoApi.textContent = '✓ Mensagem já enviada automaticamente pela API do WhatsApp — nada a fazer aqui.';
+      avisoApi.style.display = 'block';
+    }else{
+      link.style.display = '';
+      const avisoApi = $('#vt-confirmacao-aviso-api');
+      if(avisoApi) avisoApi.style.display = 'none';
+      link.href = waLink(telefone, mensagem);
+      link.target = WA_TAB;
+    }
     ultimoAtendimentoVolumeCriadoId = data.id;
 
   }catch(err){
@@ -2865,7 +2744,7 @@ async function renderDashboard(){
     sb.from('atendimentos').select('*', {count:'exact', head:true}).eq('status','aberto'),
     sb.from('atendimentos').select('*', {count:'exact', head:true}).eq('status','em_andamento'),
     sb.from('atendimentos').select('*', {count:'exact', head:true}).gte('criado_em', hojeInicio.toISOString()),
-    sb.from('atendimentos').select('*, linhas(nome, numero)').order('criado_em',{ascending:false}).limit(8)
+    sb.from('atendimentos').select('*, linhas(nome)').order('criado_em',{ascending:false}).limit(8)
   ]);
 
   $('#stat-abertos').textContent = cAberto ?? 0;
@@ -2882,14 +2761,111 @@ async function renderDashboard(){
 async function renderAtendimentosAtivos(){
   const wrap = $('#atendimentos-table-wrap');
   const { data, error } = await sb.from('atendimentos')
-    .select('*, linhas(nome, numero)')
+    .select('*, linhas(nome)')
     .in('status', ['aberto','em_andamento'])
     .order('criado_em', {ascending:false});
 
   if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar.</p>'; return; }
-  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">✅</div>Nenhum atendimento ativo no momento.</div>`; return; }
-  wrap.innerHTML = tabelaAtendimentos(data);
+
+  // separa os "não assumidos" (chegaram sozinhos pela API, ainda sem
+  // técnico responsável) do restante — ver Fluxo de Conversas Simultâneas,
+  // capítulo 4. Protocolos do modo manual sempre têm agente_id desde a
+  // criação, então nunca caem aqui.
+  const lista = data || [];
+  const naoAssumidos = lista.filter(a => !a.agente_id);
+  const demais = lista.filter(a => a.agente_id);
+
+  renderCaixaDeEntrada(naoAssumidos);
+  atualizarBadgeAtendimentosAtivos(naoAssumidos.length);
+
+  if(!demais.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">✅</div>Nenhum atendimento ativo no momento.</div>`; return; }
+  wrap.innerHTML = tabelaAtendimentos(demais);
   bindRowClicks(wrap);
+  aplicarDestaquesDeMensagemNova(wrap);
+}
+
+// Soma "não assumidos" + protocolos com mensagem nova ainda não vista pelo
+// técnico atual — mostrado como contador no item de menu (ver Fluxo de
+// Conversas Simultâneas, capítulo 4).
+function atualizarBadgeAtendimentosAtivos(qtdNaoAssumidos){
+  const badge = $('#badge-nao-assumidos');
+  if(!badge) return;
+  const total = qtdNaoAssumidos + atendimentosComMensagemNova.size;
+  if(total > 0){ badge.textContent = String(total); badge.style.display = 'inline-block'; }
+  else{ badge.style.display = 'none'; }
+}
+
+// Marca visualmente, na tabela já renderizada, as linhas cujo protocolo
+// recebeu uma mensagem nova desde a última vez que o técnico abriu o
+// detalhe (conjunto atendimentosComMensagemNova, alimentado pelo Realtime).
+function aplicarDestaquesDeMensagemNova(wrap){
+  wrap.querySelectorAll('tr[data-id]').forEach(tr=>{
+    if(!atendimentosComMensagemNova.has(tr.dataset.id)) return;
+    tr.classList.add('linha-mensagem-nova');
+    const primeiraCelula = tr.querySelector('td');
+    if(primeiraCelula && !primeiraCelula.querySelector('.ponto-novo')){
+      primeiraCelula.insertAdjacentHTML('afterbegin', '<span class="ponto-novo" title="Mensagem nova"></span>');
+    }
+  });
+}
+
+// Fila de protocolos criados automaticamente pela Edge Function
+// whatsapp-webhook (mensagem de um telefone sem atendimento aberto), ainda
+// sem um técnico responsável. Qualquer técnico habilitado pode assumir.
+function renderCaixaDeEntrada(lista){
+  const card = $('#caixa-entrada-card');
+  const wrap = $('#caixa-entrada-wrap');
+  if(!card || !wrap) return;
+
+  if(!lista.length){
+    card.style.display = 'none';
+    return;
+  }
+
+  card.style.display = 'block';
+
+  wrap.innerHTML = lista.map(a => `
+    <div class="interacao-item" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+      <div style="min-width:0;">
+        <div style="font-weight:700;">${escapeHtml(a.protocolo)} — ${escapeHtml(a.cliente_nome || a.cliente_telefone || '—')}</div>
+        <div style="font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:520px;">${escapeHtml((a.descricao_problema||'').slice(0,140))}</div>
+      </div>
+      <button class="btn btn-primary btn-sm btn-assumir" data-id="${a.id}" style="flex-shrink:0;">Assumir atendimento</button>
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('.btn-assumir').forEach(btn=>{
+    btn.addEventListener('click', ()=> assumirAtendimento(btn.dataset.id, btn));
+  });
+}
+
+// UPDATE condicional (só grava se agente_id ainda estiver vazio) — garante
+// que, se dois técnicos clicarem ao mesmo tempo, só um realmente assume.
+// Ver "Fluxo de Conversas Simultâneas", capítulo 4.1.
+async function assumirAtendimento(id, btnEl){
+  if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'Assumindo…'; }
+
+  const { data, error } = await sb.from('atendimentos')
+    .update({ agente_id: currentAgente.id, status: 'em_andamento' })
+    .eq('id', id)
+    .is('agente_id', null)
+    .select('id');
+
+  if(error){
+    toast('Erro ao assumir atendimento: '+error.message);
+    if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Assumir atendimento'; }
+    return;
+  }
+
+  if(!data || !data.length){
+    toast('Este atendimento já foi assumido por outro técnico.');
+    renderAtendimentosAtivos();
+    return;
+  }
+
+  toast('Atendimento assumido.');
+  renderAtendimentosAtivos();
+  abrirDetalhe(id);
 }
 
 function calcDuracao(inicio, fim){
@@ -3120,7 +3096,7 @@ async function renderSupervisao(){
   $('#stat-sup-abertos').textContent = cAberto ?? 0;
   $('#stat-sup-hoje').textContent = cHoje ?? 0;
 
-  let q = sb.from('atendimentos').select('*, linhas(nome, numero), agentes(nome)').order('criado_em', {ascending:false}).limit(300);
+  let q = sb.from('atendimentos').select('*, linhas(nome), agentes(nome)').order('criado_em', {ascending:false}).limit(300);
 
   const de = $('#fs-de').value, ate = $('#fs-ate').value;
   const protocolo = $('#fs-protocolo').value.trim();
@@ -3339,7 +3315,6 @@ async function alternarAdminAgente(agente){
     $('#nav-supervisao').style.display = 'none';
     $('#nav-agentes').style.display = 'none';
     $('#nav-categorias').style.display = 'none';
-    $('#btn-abrir-busca').style.display = 'none';
     $('#agent-role-badge').textContent = '';
     switchView('dashboard');
     return;
@@ -3367,7 +3342,7 @@ async function renderHistorico(){
   const wrap = $('#historico-table-wrap');
   wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Carregando…</div>';
 
-  let q = sb.from('atendimentos').select('*, linhas(nome, numero), agentes(nome)').order('criado_em', {ascending:false}).limit(300);
+  let q = sb.from('atendimentos').select('*, linhas(nome), agentes(nome)').order('criado_em', {ascending:false}).limit(300);
 
   const de = $('#fh-de').value, ate = $('#fh-ate').value;
   const protocolo = $('#fh-protocolo').value.trim();
@@ -3398,40 +3373,6 @@ const STATUS_LABEL = {aberto:'Aberto', em_andamento:'Em andamento', transferido:
 // aplicação — faixa colorida com o nome do sistema, mais um subtítulo
 // (título do documento) alinhado à direita. Devolve a posição Y livre
 // para o conteúdo começar, já abaixo da faixa.
-// ---------------- SANITIZAÇÃO DE TEXTO PARA PDF ----------------
-// As fontes padrão do jsPDF (Helvetica/Courier) só suportam WinAnsi:
-// emojis e símbolos fora dessa tabela saíam como lixo ("Ø=ÜK"). Aqui
-// trocamos os símbolos mais comuns por equivalentes legíveis e
-// removemos o restante.
-const PDF_SUBST = {
-  '\u2013':'-', '\u2014':'-', '\u2018':"'", '\u2019':"'",
-  '\u201c':'"', '\u201d':'"', '\u2026':'...', '\u2022':'-',
-  '\u00a0':' ', '\u2192':'->', '\u2190':'<-', '\u2705':'[OK]',
-  '\u274c':'[X]', '\u26a0':'[!]', '\u2713':'[OK]', '\u00b7':'-'
-};
-// nome da linha acompanhado do número (ex.: "Linha 1 (+5521988887777)")
-function linhaComNumero(linha){
-  if(!linha || !linha.nome) return '—';
-  return linha.numero ? `${linha.nome} (+${linha.numero})` : linha.nome;
-}
-
-function pdfSafe(txt){
-  if(txt === null || txt === undefined) return '';
-  let out = String(txt);
-  // remove seletores de variação/ZWJ e bandeiras/skin tones
-  out = out.replace(/[\uFE0E\uFE0F\u200D]/g, '');
-  out = out.replace(/[\u{1F000}-\u{1FAFF}\u{1F1E6}-\u{1F1FF}]/gu, '');
-  out = out.replace(/[\s\S]/gu, ch => {
-    if(PDF_SUBST[ch] !== undefined) return PDF_SUBST[ch];
-    const c = ch.codePointAt(0);
-    if(c === 10 || c === 13 || c === 9) return ch;
-    if(c >= 32 && c <= 126) return ch;
-    if(c >= 160 && c <= 255) return ch;   // acentuação latina
-    return '';
-  });
-  return out.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+$/gm, '');
-}
-
 function desenharCabecalhoPDF(doc, subtitulo){
   const largura = doc.internal.pageSize.getWidth();
   doc.setFillColor(15, 110, 99);
@@ -3468,7 +3409,7 @@ function exportarExcel(dados, nomeArquivo, comAgente){
       'Cliente': a.cliente_nome,
       'WhatsApp': '+'+a.cliente_telefone,
       'Equipamento': a.equipamento || '',
-      'Linha': a.linhas ? linhaComNumero(a.linhas) : ''
+      'Linha': a.linhas?.nome || ''
     };
     if(comAgente) linha['Agente'] = a.agentes?.nome || '';
     linha['Status'] = STATUS_LABEL[a.status] || a.status;
@@ -3513,7 +3454,7 @@ function exportarPDF(dados, titulo, comAgente, modo='download'){
     const row = [a.protocolo, a.cliente_nome, '+'+a.cliente_telefone, a.linhas?.nome || '—'];
     if(comAgente) row.push(a.agentes?.nome || '—');
     row.push(STATUS_LABEL[a.status] || a.status, fmtData(a.criado_em), calcDuracao(a.criado_em, a.encerrado_em));
-    return row.map(pdfSafe);
+    return row;
   });
 
   doc.autoTable({
@@ -3545,7 +3486,7 @@ async function exportarProtocoloPDF(atendimento, interacoes, modo='download'){
     ...(atendimento.cliente_grupo ? [['Cliente', atendimento.cliente_grupo]] : []),
     ['WhatsApp', '+'+atendimento.cliente_telefone],
     ['Equipamento', atendimento.equipamento || '—'],
-    ['Linha', linhaComNumero(atendimento.linhas)],
+    ['Linha', atendimento.linhas?.nome || '—'],
     ['Agente responsável', atendimento.agentes?.nome || '—'],
     ['Status', STATUS_LABEL[atendimento.status] || atendimento.status],
     ['Início', fmtData(atendimento.criado_em)],
@@ -3556,7 +3497,7 @@ async function exportarProtocoloPDF(atendimento, interacoes, modo='download'){
   ];
   doc.autoTable({
     startY: y0+12, theme:'plain', styles:{ fontSize: 9, cellPadding: 2 },
-    body: infoLinhas.map(l => l.map(pdfSafe)), columnStyles: { 0:{ fontStyle:'bold', cellWidth: 45 } }
+    body: infoLinhas, columnStyles: { 0:{ fontStyle:'bold', cellWidth: 45 } }
   });
 
   const y1 = doc.lastAutoTable.finalY + 8;
@@ -3567,8 +3508,8 @@ async function exportarProtocoloPDF(atendimento, interacoes, modo='download'){
 
   const body = (interacoes||[]).map(i=>[
     fmtData(i.criado_em), i.tipo.replace('_',' '), i.agentes?.nome||'—',
-    limparMarkdownWhats(i.conteudo) + (i.destinatario_telefone ? ` (destinatário: +${i.destinatario_telefone})` : '')
-  ].map(pdfSafe));
+    i.conteudo + (i.destinatario_telefone ? ` (destinatário: +${i.destinatario_telefone})` : '')
+  ]);
   doc.autoTable({
     startY: y1+4, head:[['Data','Tipo','Agente','Conteúdo']], body,
     styles:{ fontSize: 8, cellPadding: 3 }, headStyles:{ fillColor:[15,110,99] },
@@ -3578,134 +3519,12 @@ async function exportarProtocoloPDF(atendimento, interacoes, modo='download'){
   abrirOuSalvarPDF(doc, 'protocolo_' + atendimento.protocolo.toLowerCase() + '.pdf', modo);
 }
 
-
-// ---------------- PDF A6 (mensagem do protocolo) ----------------
-// Versão impressa/compartilhável da mensagem enviada ao cliente, em
-// A6 retrato (105 x 148 mm): faixa institucional, ticket do protocolo,
-// corpo da mensagem com quebra automática e paginação, e rodapé.
-function limparMarkdownWhats(txt){
-  return pdfSafe(txt)
-    .replace(/\*(.+?)\*/g, '$1')
-    .replace(/_(.+?)_/g, '$1')
-    .replace(/~(.+?)~/g, '$1')
-    .replace(/^[ \t]*[-*][ \t]+/gm, '- ')
-    .replace(/[ \t]+$/gm, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-function gerarProtocoloPDFA6({ protocolo, titulo, mensagem, destinatario, modo = 'view' }){
-  if(!window.jspdf){ toast('Gerador de PDF ainda carregando — tente novamente.'); return; }
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a6' });
-  const W = doc.internal.pageSize.getWidth();   // 105
-  const H = doc.internal.pageSize.getHeight();  // 148
-  const M = 9;                                   // margem
-  const VERDE = [15, 110, 99];
-  const VERDE_ESC = [11, 81, 72];
-
-  function cabecalho(){
-    doc.setFillColor.apply(doc, VERDE);
-    doc.rect(0, 0, W, 17, 'F');
-    doc.setTextColor(255,255,255);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(11);
-    doc.text('GRUPO LABMEDIC', M, 7.5);
-    doc.setFont('helvetica','normal');
-    doc.setFontSize(6.5);
-    doc.text('Sistema de Atendimento Técnico Interno', M, 12.5);
-    doc.setTextColor(20,20,20);
-  }
-  function rodape(pag){
-    doc.setDrawColor(225,231,237);
-    doc.setLineWidth(0.3);
-    doc.line(M, H-11, W-M, H-11);
-    doc.setFont('helvetica','normal');
-    doc.setFontSize(6);
-    doc.setTextColor(120,130,145);
-    doc.text('Documento gerado em ' + new Date().toLocaleString('pt-BR'), M, H-7);
-    doc.text('pág. ' + pag, W-M, H-7, { align:'right' });
-    doc.setTextColor(20,20,20);
-  }
-
-  let pagina = 1;
-  cabecalho();
-  let y = 23;
-
-  // ticket do protocolo
-  doc.setFillColor.apply(doc, VERDE_ESC);
-  doc.roundedRect(M, y, W-M*2, 15, 2, 2, 'F');
-  doc.setTextColor(255,255,255);
-  doc.setFont('helvetica','normal');
-  doc.setFontSize(6.5);
-  doc.text(pdfSafe(titulo || 'Protocolo de atendimento').toUpperCase(), M+4, y+5.5);
-  doc.setFont('courier','bold');
-  doc.setFontSize(12);
-  doc.text(pdfSafe(protocolo || '—'), M+4, y+11.5);
-  doc.setTextColor(20,20,20);
-  y += 21;
-
-  if(destinatario){
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(7);
-    doc.text('Destinatário', M, y);
-    doc.setFont('helvetica','normal');
-    doc.setTextColor(60,72,88);
-    const dest = doc.splitTextToSize(pdfSafe(destinatario), W-M*2);
-    doc.text(dest, M, y+3.8);
-    doc.setTextColor(20,20,20);
-    y += 3.8 + dest.length*3.4 + 3;
-  }
-
-  doc.setDrawColor(225,231,237);
-  doc.line(M, y, W-M, y);
-  y += 5;
-
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(7.5);
-  doc.text('Mensagem', M, y);
-  y += 4.5;
-
-  doc.setFont('helvetica','normal');
-  doc.setFontSize(8);
-  const limiteY = H - 15;
-  limparMarkdownWhats(mensagem).split('\n').forEach(par=>{
-    if(par.trim() === ''){ y += 2.4; return; }
-    doc.splitTextToSize(par, W-M*2).forEach(linha=>{
-      if(y > limiteY){
-        rodape(pagina); doc.addPage(); pagina++; cabecalho();
-        y = 23; doc.setFont('helvetica','normal'); doc.setFontSize(8);
-      }
-      doc.text(linha, M, y);
-      y += 4.1;
-    });
-  });
-
-  rodape(pagina);
-  const nome = 'protocolo_' + String(protocolo || 'labmedic').toLowerCase().replace(/[^a-z0-9]+/g,'_') + '_a6.pdf';
-  abrirOuSalvarPDF(doc, nome, modo);
-}
-
-$('#novo-confirmacao-pdf')?.addEventListener('click', ()=>{
-  gerarProtocoloPDFA6({
-    protocolo: $('#novo-confirmacao-protocolo').textContent.trim(),
-    titulo: 'Atendimento técnico',
-    mensagem: $('#novo-confirmacao-mensagem').textContent
-  });
-});
-$('#vt-confirmacao-pdf')?.addEventListener('click', ()=>{
-  gerarProtocoloPDFA6({
-    protocolo: $('#vt-confirmacao-protocolo').textContent.trim(),
-    titulo: 'Solicitação de volume de testes',
-    mensagem: $('#vt-confirmacao-mensagem').textContent
-  });
-});
-
 // ---------------- DETALHE / MODAL ----------------
 let atendimentoAtualId = null;
 
 async function abrirDetalhe(id){
   atendimentoAtualId = id;
+  atendimentosComMensagemNova.delete(id); // limpa o destaque de "mensagem nova" ao abrir
   const overlay = $('#modal-overlay');
   overlay.classList.add('active');
   $('#modal-body').innerHTML = '<div class="loading-row"><div class="spinner"></div>Carregando…</div>';
@@ -3716,7 +3535,6 @@ async function abrirDetalhe(id){
   ]);
 
   if(!atendimento){ $('#modal-body').innerHTML = '<p class="hint">Atendimento não encontrado.</p>'; return; }
-  const ehEncerrado = String(atendimento.status||'').toLowerCase() === 'encerrado';
 
   $('#modal-protocolo').textContent = atendimento.protocolo;
 
@@ -3767,19 +3585,12 @@ async function abrirDetalhe(id){
 
     <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
       <a class="btn btn-whatsapp btn-sm" target="${WA_TAB}" href="${waLink(atendimento.cliente_telefone,'Olá '+atendimento.cliente_nome+', tudo bem? Sobre o protocolo '+atendimento.protocolo+': ')}">Abrir WhatsApp do cliente</a>
-      ${!ehEncerrado ? `<button class="btn btn-ghost btn-sm" id="btn-encerrar">Encerrar atendimento</button>`:''}
+      ${atendimento.status!=='encerrado' ? `<button class="btn btn-ghost btn-sm" id="btn-encerrar">Encerrar atendimento</button>`:''}
       <button class="btn btn-ghost btn-sm" id="btn-transferir">Transferir / reenviar histórico</button>
       <button class="btn btn-ghost btn-sm" id="btn-visualizar-pdf-protocolo">👁 Visualizar PDF</button>
       <button class="btn btn-ghost btn-sm" id="btn-exportar-pdf-protocolo">⬇ Baixar PDF</button>
     </div>
 
-    ${ehEncerrado ? `
-    <div class="card card-pad" style="background:var(--bg);margin-bottom:18px;">
-      <p class="section-title" style="margin-bottom:6px;">🔒 Atendimento encerrado</p>
-      <p class="hint" style="margin-bottom:12px;">O status deste protocolo não muda sozinho. Para registrar um novo procedimento, observação, ou continuar a interação com a unidade, reabra o atendimento primeiro — isso fica registrado no histórico abaixo.</p>
-      <button class="btn btn-primary btn-sm" id="btn-reabrir-atendimento">🔓 Reabrir atendimento</button>
-    </div>
-    ` : `
     <p class="section-title" style="margin-bottom:10px;">Registrar novo procedimento</p>
     <div class="field"><textarea id="nova-interacao" rows="3" placeholder="Ex: Solicitar ao cliente que reinicie o equipamento e verifique o fusível do painel traseiro."></textarea></div>
     <div style="display:flex;gap:8px;margin-bottom:22px;">
@@ -3793,10 +3604,9 @@ async function abrirDetalhe(id){
     <div style="display:flex;gap:8px;margin-bottom:22px;">
       <button class="btn btn-ghost btn-sm" id="btn-salvar-observacao">Salvar observação</button>
     </div>
-    `}
 
     <p class="section-title" style="margin-bottom:10px;">Anexar arquivo recebido</p>
-    <p class="hint" style="margin:-4px 0 8px;">Para anexar um print, foto ou documento que o colaborador/cliente enviou pelo WhatsApp real (ex: volume de testes solicitado) — fica disponível para download aqui no protocolo. Anexar não altera o status do protocolo.</p>
+    <p class="hint" style="margin:-4px 0 8px;">Para anexar um print, foto ou documento que o colaborador/cliente enviou pelo WhatsApp real (ex: volume de testes solicitado) — fica disponível para download aqui no protocolo.</p>
     <div class="field"><textarea id="nova-anexo-legenda" rows="2" placeholder="Ex: print do volume de testes enviado pelo colaborador da unidade."></textarea></div>
     <div class="field"><input type="file" id="nova-anexo-arquivo" accept="image/*,.pdf"/></div>
     <div style="display:flex;gap:8px;margin-bottom:22px;">
@@ -3807,13 +3617,9 @@ async function abrirDetalhe(id){
     <div id="lista-interacoes">${listaInteracoes}</div>
   `;
 
-  if(!ehEncerrado){
-    $('#btn-salvar-interacao').addEventListener('click', ()=> salvarInteracao(atendimento, false));
-    $('#btn-salvar-enviar').addEventListener('click', ()=> salvarInteracao(atendimento, true));
-    $('#btn-salvar-observacao').addEventListener('click', ()=> salvarObservacaoCliente(atendimento));
-  }
-  const btnReabrir = $('#btn-reabrir-atendimento');
-  if(btnReabrir) btnReabrir.addEventListener('click', ()=> reabrirAtendimento(atendimento));
+  $('#btn-salvar-interacao').addEventListener('click', ()=> salvarInteracao(atendimento, false));
+  $('#btn-salvar-enviar').addEventListener('click', ()=> salvarInteracao(atendimento, true));
+  $('#btn-salvar-observacao').addEventListener('click', ()=> salvarObservacaoCliente(atendimento));
   $('#btn-salvar-anexo').addEventListener('click', ()=> salvarAnexoRecebido(atendimento));
   const btnEnc = $('#btn-encerrar');
   if(btnEnc) btnEnc.addEventListener('click', ()=> encerrarAtendimento(atendimento));
@@ -3850,11 +3656,16 @@ async function salvarInteracao(atendimento, enviarWhatsapp){
   const texto = $('#nova-interacao').value.trim();
   if(!texto){ toast('Escreva o procedimento antes de salvar.'); return; }
 
+  // usa o canal gravado no próprio atendimento; para protocolos antigos,
+  // sem esse campo ainda preenchido, cai de volta para o status atual da linha.
+  const usaApi = enviarWhatsapp &&
+    (atendimento.canal === 'whatsapp_api' || (!atendimento.canal && linhaTemApiAtiva(atendimento.linha_id)));
+
   // precisa ser aberta aqui, antes do primeiro "await" abaixo — é isso
   // que preserva a sincronia com o clique do usuário (ver
   // abrirAbaWhatsAppSincrono) e evita abrir uma aba/janela nova a cada
-  // vez que este botão é usado.
-  const winWhats = enviarWhatsapp ? abrirAbaWhatsAppSincrono() : null;
+  // vez que este botão é usado. No modo API não abrimos nenhuma aba.
+  const winWhats = (enviarWhatsapp && !usaApi) ? abrirAbaWhatsAppSincrono() : null;
 
   await sb.from('interacoes').insert({
     atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'procedimento', conteudo: texto
@@ -3864,10 +3675,24 @@ async function salvarInteracao(atendimento, enviarWhatsapp){
     await sb.from('atendimentos').update({status:'em_andamento'}).eq('id', atendimento.id);
   }
 
-  if(enviarWhatsapp){
-    navegarAbaWhatsApp(winWhats, atendimento.cliente_telefone, texto);
+  if(usaApi){
+    // aqui, diferente do modo manual, o envio grava sua PRÓPRIA interação
+    // (tipo "mensagem", pela Edge Function) além da de "procedimento" já
+    // registrada acima — um pouco mais granular, mas continua tudo no
+    // mesmo histórico do protocolo.
+    try{
+      await enviarViaWhatsAppApi({ atendimentoId: atendimento.id, telefone: atendimento.cliente_telefone, texto, agenteId: currentAgente.id });
+      toast('Procedimento registrado e mensagem enviada automaticamente.');
+    }catch(errEnvio){
+      console.error('[salvar-interacao] falha ao enviar via API do WhatsApp:', errEnvio);
+      toast('Procedimento registrado, mas a mensagem não pôde ser enviada: '+errEnvio.message);
+    }
+  }else{
+    if(enviarWhatsapp){
+      navegarAbaWhatsApp(winWhats, atendimento.cliente_telefone, texto);
+    }
+    toast('Procedimento registrado.');
   }
-  toast('Procedimento registrado.');
   abrirDetalhe(atendimento.id);
   atualizarListaAtivaEmSegundoPlano();
 }
@@ -3917,25 +3742,6 @@ async function salvarObservacaoCliente(atendimento){
 
   toast('Observação registrada.');
   abrirDetalhe(atendimento.id);
-}
-
-// Reabertura EXPLÍCITA de um atendimento encerrado — é o único ponto do
-// sistema que tira um protocolo do status "encerrado", justamente para
-// que isso nunca aconteça como efeito colateral de transferir, reenviar
-// ou registrar algo (ver confirmarEnvio). Fica registrada no histórico
-// para auditoria de quando e por quem o caso foi reaberto.
-async function reabrirAtendimento(atendimento){
-  const { error } = await sb.from('atendimentos').update({status:'em_andamento', encerrado_em:null}).eq('id', atendimento.id);
-  if(error){ toast('Erro ao reabrir: '+error.message); return; }
-  await sb.from('interacoes').insert({
-    atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'nota_interna',
-    conteudo: `Atendimento reaberto por ${currentAgente.nome}`
-      + (atendimento.motivo_encerramento ? ` (estava encerrado — motivo anterior: ${atendimento.motivo_encerramento})` : '')
-      + ' — interação com a unidade retomada.'
-  });
-  toast('Atendimento reaberto.');
-  abrirDetalhe(atendimento.id);
-  atualizarListaAtivaEmSegundoPlano();
 }
 
 // Encerrar exige escolher um motivo — mostra um formulário dentro do
@@ -4005,19 +3811,11 @@ function abrirTransferencia(atendimento, interacoes){
 // (foto/PDF) para dar mais contexto a quem vai continuar o caso.
 function mostrarFormularioEnvio(atendimento, interacoes, modo){
   const ehTransferencia = modo === 'transferir';
-  const ehEncerrado = String(atendimento.status||'').toLowerCase() === 'encerrado';
   $('#modal-overlay').classList.add('active');
   $('#modal-protocolo-label').textContent = ehTransferencia ? 'Transferir atendimento' : 'Reenviar histórico';
   $('#modal-protocolo').textContent = atendimento.protocolo;
   $('#modal-body').innerHTML = `
     <p class="section-sub" style="margin:14px 0 16px;">${ehTransferencia ? 'Informe para quem este atendimento vai ser transferido.' : 'Informe para quem o histórico deste protocolo será reenviado.'}</p>
-    ${ehEncerrado ? `
-    <div class="card card-pad" style="background:var(--bg);margin-bottom:16px;">
-      <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;">
-        <input type="checkbox" id="dest-reabrir" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;"/>
-        <span><strong>🔓 Reabrir este atendimento encerrado</strong> — marque se a interação entre o técnico e o representante da unidade vai continuar a partir deste ${ehTransferencia?'envio':'reenvio'}. Sem marcar, o protocolo continua <strong>encerrado</strong> e isso é só um envio de referência, sem mudar o status.</span>
-      </label>
-    </div>` : ''}
     <div class="field"><label>Nome do destinatário</label><input id="dest-nome" placeholder="Ex: Dr. João Pereira"/></div>
     <div class="field"><label>WhatsApp do destinatário</label>
       <div class="phone-group"><span class="phone-prefix">+55</span><input id="dest-telefone" inputmode="numeric" placeholder="(21) 98888-7777"/></div>
@@ -4032,36 +3830,24 @@ function mostrarFormularioEnvio(atendimento, interacoes, modo){
       Redirecionamento para técnico em visita presencial
     </label>
     <div id="dest-status" class="hint" style="margin-bottom:10px;"></div>
-    <button class="btn btn-ghost btn-block" id="btn-pdf-a6-form" style="margin-bottom:10px;">🧾 Gerar PDF do protocolo (A6)</button>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-primary" style="flex:1;" id="btn-confirmar-envio">${ehTransferencia ? 'Transferir e enviar' : 'Reenviar e enviar'}</button>
       <button class="btn btn-ghost" id="btn-cancelar-envio">Cancelar</button>
     </div>
   `;
   aplicarMascaraCelular($('#dest-telefone'));
-  // PDF do protocolo direto no formulário — antes mesmo de enviar/reenviar
-  $('#btn-pdf-a6-form')?.addEventListener('click', ()=>{
-    const nome = $('#dest-nome').value.trim();
-    const telefone = comDDI55($('#dest-telefone').value);
-    const texto = montarResumoHistorico(atendimento, interacoes, {
-      destinatarioNome: nome, destinatarioTelefone: telefone,
-      anexoUrl: null, redirecionamentoPresencial: $('#dest-presencial').checked
-    });
-    gerarProtocoloPDFA6({
-      protocolo: atendimento.protocolo || '',
-      titulo: ehTransferencia ? 'Transferencia de atendimento' : 'Reenvio de historico',
-      destinatario: telefone ? ('+'+telefone) : (nome || '—'),
-      mensagem: texto
-    });
-  });
   $('#btn-cancelar-envio').addEventListener('click', ()=> abrirDetalhe(atendimento.id));
   $('#btn-confirmar-envio').addEventListener('click', ()=> confirmarEnvio(atendimento, interacoes, modo));
 }
 
 async function confirmarEnvio(atendimento, interacoes, modo){
+  // Este fluxo permanece no modo manual (link do WhatsApp), mesmo em linhas
+  // já conectadas à API — o destinatário aqui costuma ser um colega ou um
+  // técnico externo, não necessariamente quem já está numa conversa aberta
+  // com o número da empresa, então a Meta normalmente exigiria um template
+  // aprovado para iniciar essa conversa (Fase 6, ainda não concluída).
+  // Reavaliar quando os templates de transferência estiverem aprovados.
   const ehTransferencia = modo === 'transferir';
-  const ehEncerrado = String(atendimento.status||'').toLowerCase() === 'encerrado';
-  const reabrir = ehEncerrado && ($('#dest-reabrir')?.checked || false);
   const nome = $('#dest-nome').value.trim();
   const telefone = comDDI55($('#dest-telefone').value);
   const arquivo = $('#dest-arquivo').files[0];
@@ -4092,28 +3878,9 @@ async function confirmarEnvio(atendimento, interacoes, modo){
     status.textContent = ehTransferencia ? 'Registrando transferência…' : 'Registrando reenvio…';
     const resumo = montarResumoHistorico(atendimento, interacoes, { destinatarioNome: nome, destinatarioTelefone: telefone, anexoUrl, redirecionamentoPresencial: presencial });
 
-    // O status só é alterado em dois casos — nunca como efeito colateral
-    // de um simples reenvio/transferência sobre um protocolo já encerrado:
-    // 1) transferência normal, com o protocolo ainda ativo;
-    // 2) reabertura EXPLICITAMENTE marcada pelo agente (checkbox
-    //    "Reabrir este atendimento encerrado"), quando o protocolo
-    //    estava encerrado e a interação com a unidade vai continuar.
-    if(reabrir){
-      const novoStatus = ehTransferencia ? 'transferido' : 'em_andamento';
-      await sb.from('atendimentos').update({status:novoStatus, encerrado_em:null}).eq('id', atendimento.id);
-      await sb.from('interacoes').insert({
-        atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'nota_interna',
-        conteudo: `Atendimento reaberto por ${currentAgente.nome} ao ${ehTransferencia?'transferir':'reenviar'} o histórico`
-          + (atendimento.motivo_encerramento ? ` (estava encerrado — motivo anterior: ${atendimento.motivo_encerramento})` : '')
-          + '.'
-      });
-    }else if(ehTransferencia && !ehEncerrado){
+    if(ehTransferencia){
       await sb.from('atendimentos').update({status:'transferido'}).eq('id', atendimento.id);
     }
-    // demais casos (protocolo encerrado e "Reabrir" não marcado): o
-    // status permanece "encerrado", seja transferindo ou reenviando —
-    // é só um envio de referência.
-
     await sb.from('interacoes').insert({
       atendimento_id: atendimento.id, agente_id: currentAgente.id,
       tipo: ehTransferencia ? 'transferencia' : 'reenvio',
@@ -4159,13 +3926,7 @@ function montarResumoHistorico(atendimento, interacoes, destino={}){
     txt += `\nNenhum procedimento registrado até o momento.\n`;
   }
 
-  // O WhatsApp gera automaticamente um "cartão de pré-visualização" para o
-  // primeiro link do texto — no caso, expondo o domínio interno do banco de
-  // dados acima da mensagem. Enviando a URL dentro de um bloco de código
-  // (```), o WhatsApp não a interpreta como link e nenhum preview é criado;
-  // o endereço continua visível e pode ser copiado/tocado pelo destinatário.
-  if(destino.anexoUrl) txt += `\n📎 *Evidência anexada:*\n\`\`\`${destino.anexoUrl}\`\`\`\n`;
-
+  if(destino.anexoUrl) txt += `\n📎 *Evidência anexada:* ${destino.anexoUrl}\n`;
 
   // Essa frase só faz sentido quando alguém vai assumir presencialmente
   // — num reenvio comum (ex: só mandar uma cópia para referência), não
@@ -4193,17 +3954,8 @@ function mostrarConfirmacaoEnvioModal(atendimentoId, titulo, mensagem, numero, w
     <p class="section-title">Mensagem</p>
     <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;max-height:320px;overflow-y:auto;">${escapeHtml(mensagem)}</div>
     <a class="btn btn-whatsapp btn-block" href="${waLink(numero, mensagem)}" target="${WA_TAB}" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
-    <button class="btn btn-ghost btn-block" id="btn-pdf-a6-envio" style="margin-bottom:10px;">🧾 Gerar PDF do protocolo (A6)</button>
     <button class="btn btn-ghost btn-block" id="btn-voltar-detalhe-modal">Voltar ao protocolo</button>
   `;
-  $('#btn-pdf-a6-envio')?.addEventListener('click', ()=>{
-    gerarProtocoloPDFA6({
-      protocolo: (mensagem.match(/Protocolo:\*?\s*([^\n]+)/)||[])[1]?.trim() || '',
-      titulo: titulo,
-      destinatario: '+' + numero,
-      mensagem: mensagem
-    });
-  });
   $('#btn-voltar-detalhe-modal').addEventListener('click', ()=> abrirDetalhe(atendimentoId));
   toast('Pronto — clique no botão para abrir o WhatsApp.');
   atualizarListaAtivaEmSegundoPlano();
