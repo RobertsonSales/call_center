@@ -1,1 +1,105 @@
+// ============================================================================
+// whatsapp-midia
+// Grupo Labmedic — Sistema de Atendimento Técnico Interno
+//
+// Chamada internamente por whatsapp-webhook sempre que uma mensagem recebida
+// contém mídia (foto, áudio, documento). O webhook da Meta só entrega um
+// identificador — esta função baixa o arquivo de fato e o guarda no mesmo
+// bucket "evidencias" já usado hoje em Anexar arquivo recebido / Transferir.
+//
+// Corpo esperado (JSON):
+//   { media_id: string, atendimento_id: string, interacao_id?: string, nome_arquivo?: string }
+//
+// Segredos necessários:
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+//   META_ACCESS_TOKEN
+// ============================================================================
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const META_ACCESS_TOKEN = Deno.env.get("META_ACCESS_TOKEN")!;
+const GRAPH_API_VERSAO = "v20.0";
+
+const sb = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+// @ts-ignore Deno global disponível no runtime das Edge Functions
+Deno.serve(async (req: Request) => {
+  if (req.method !== "POST") {
+    return new Response("método não suportado", { status: 405 });
+  }
+
+  let corpo: any;
+  try {
+    corpo = await req.json();
+  } catch {
+    return new Response(JSON.stringify({ erro: "corpo inválido" }), { status: 400 });
+  }
+
+  const { media_id, atendimento_id, interacao_id, nome_arquivo } = corpo;
+  if (!media_id || !atendimento_id) {
+    return new Response(JSON.stringify({ erro: "informe media_id e atendimento_id" }), { status: 400 });
+  }
+
+  try {
+    // ---- passo 1: consulta a URL temporária de download do arquivo ----
+    const respostaInfo = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSAO}/${media_id}`, {
+      headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}` },
+    });
+    const infoMedia = await respostaInfo.json();
+    if (!respostaInfo.ok || !infoMedia?.url) {
+      throw new Error(infoMedia?.error?.message ?? "não foi possível obter a URL da mídia");
+    }
+
+    // ---- passo 2: baixa o arquivo em si (a URL acima também exige o token) ----
+    const respostaArquivo = await fetch(infoMedia.url, {
+      headers: { Authorization: `Bearer ${META_ACCESS_TOKEN}` },
+    });
+    if (!respostaArquivo.ok) {
+      throw new Error("falha ao baixar o arquivo de mídia da Meta");
+    }
+    const bytesArquivo = new Uint8Array(await respostaArquivo.arrayBuffer());
+    const mimeType: string = infoMedia.mime_type ?? "application/octet-stream";
+    const extensao = mimeType.split("/")[1]?.split(";")[0] ?? "bin";
+    const nomeFinal = nome_arquivo ?? `whatsapp_${media_id}.${extensao}`;
+
+    // ---- passo 3: sobe para o mesmo bucket já usado pelo restante do sistema ----
+    const caminho = `${atendimento_id}/${Date.now()}_${nomeFinal.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const { error: erroUpload } = await sb.storage.from("evidencias").upload(caminho, bytesArquivo, {
+      contentType: mimeType,
+    });
+    if (erroUpload) throw erroUpload;
+
+    const { data: publico } = sb.storage.from("evidencias").getPublicUrl(caminho);
+
+    // ---- passo 4: vincula o anexo à interação já criada pelo webhook,
+    //      ou cria uma nova interação do tipo "anexo" se nenhuma foi informada ----
+    if (interacao_id) {
+      await sb.from("interacoes").update({
+        anexo_url: publico.publicUrl,
+        anexo_nome: nomeFinal,
+      }).eq("id", interacao_id);
+    } else {
+      await sb.from("interacoes").insert({
+        atendimento_id,
+        agente_id: null,
+        tipo: "anexo",
+        conteudo: "Arquivo recebido automaticamente via WhatsApp.",
+        anexo_url: publico.publicUrl,
+        anexo_nome: nomeFinal,
+      });
+    }
+
+    return new Response(JSON.stringify({ sucesso: true, url: publico.publicUrl }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    console.error("[whatsapp-midia] erro:", err);
+    return new Response(JSON.stringify({ sucesso: false, erro: String(err) }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+});
