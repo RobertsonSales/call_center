@@ -1,1 +1,277 @@
+// ============================================================================
+// whatsapp-webhook
+// Grupo Labmedic — Sistema de Atendimento Técnico Interno
+//
+// Endereço público chamado pela Meta a cada mensagem recebida ou mudança de
+// status de uma mensagem enviada. Implementa o fluxo descrito no documento
+// "Fluxo de Conversas Simultâneas":
+//   - Cenário A: telefone já tem atendimento aberto -> vira nova interação.
+//   - Cenário B: telefone sem atendimento aberto -> cria protocolo novo,
+//     sem agente_id (fica em "não assumidos"), e sempre envia uma mensagem
+//     automática de confirmação (decisão já validada com o Grupo Labmedic).
+//
+// Segredos necessários (Supabase → Edge Functions → Secrets):
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+//   META_VERIFY_TOKEN     -> valor escolhido por você, informado também no
+//                            painel da Meta ao configurar o webhook
+//   META_APP_SECRET       -> "App Secret" do App técnico, usado para validar
+//                            a assinatura de cada chamada recebida
+// ============================================================================
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const META_VERIFY_TOKEN = Deno.env.get("META_VERIFY_TOKEN")!;
+const META_APP_SECRET = Deno.env.get("META_APP_SECRET")!;
+
+// service role: grava diretamente nas tabelas, contornando a RLS por design
+// (ver observação na migração 002) — nunca expor esta chave fora dos segredos.
+const sb = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+// @ts-ignore Deno global disponível no runtime das Edge Functions
+Deno.serve(async (req: Request) => {
+  const url = new URL(req.url);
+
+  // -------- verificação do webhook (handshake inicial exigido pela Meta) --------
+  if (req.method === "GET") {
+    const mode = url.searchParams.get("hub.mode");
+    const token = url.searchParams.get("hub.verify_token");
+    const challenge = url.searchParams.get("hub.challenge");
+    if (mode === "subscribe" && token === META_VERIFY_TOKEN) {
+      return new Response(challenge ?? "", { status: 200 });
+    }
+    return new Response("Verificação inválida", { status: 403 });
+  }
+
+  // -------- eventos reais (mensagens e status) --------
+  if (req.method === "POST") {
+    const bodyText = await req.text();
+
+    const assinaturaOk = await validarAssinatura(req, bodyText);
+    if (!assinaturaOk) {
+      console.error("[whatsapp-webhook] assinatura inválida — descartando.");
+      return new Response("assinatura inválida", { status: 401 });
+    }
+
+    let payload: any;
+    try {
+      payload = JSON.parse(bodyText);
+    } catch {
+      return new Response("payload inválido", { status: 400 });
+    }
+
+    try {
+      await processarPayload(payload);
+    } catch (err) {
+      // registra o erro mas responde 200 mesmo assim — reenviar o mesmo
+      // evento repetidamente não ajuda; erros ficam visíveis nos logs da
+      // função para investigação manual.
+      console.error("[whatsapp-webhook] erro ao processar payload:", err);
+    }
+
+    return new Response("EVENT_RECEIVED", { status: 200 });
+  }
+
+  return new Response("método não suportado", { status: 405 });
+});
+
+// ----------------------------------------------------------------------------
+// Valida o cabeçalho X-Hub-Signature-256 enviado pela Meta em cada chamada,
+// garantindo que o evento realmente veio da Meta (e não de terceiros).
+// ----------------------------------------------------------------------------
+async function validarAssinatura(req: Request, bodyText: string): Promise<boolean> {
+  const assinaturaRecebida = req.headers.get("x-hub-signature-256");
+  if (!assinaturaRecebida || !META_APP_SECRET) return false;
+
+  const encoder = new TextEncoder();
+  const chave = await crypto.subtle.importKey(
+    "raw", encoder.encode(META_APP_SECRET),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const assinaturaCalculada = await crypto.subtle.sign("HMAC", chave, encoder.encode(bodyText));
+  const hexCalculada = "sha256=" + Array.from(new Uint8Array(assinaturaCalculada))
+    .map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  return hexCalculada === assinaturaRecebida;
+}
+
+// ----------------------------------------------------------------------------
+// Processa o payload da Meta: mensagens recebidas e atualizações de status.
+// ----------------------------------------------------------------------------
+async function processarPayload(payload: any) {
+  const entradas = payload?.entry ?? [];
+  for (const entrada of entradas) {
+    for (const mudanca of entrada?.changes ?? []) {
+      const valor = mudanca?.value;
+      if (!valor) continue;
+
+      const phoneNumberId = valor?.metadata?.phone_number_id;
+
+      for (const msg of valor?.messages ?? []) {
+        await tratarMensagemRecebida(msg, phoneNumberId);
+      }
+      for (const status of valor?.statuses ?? []) {
+        await tratarAtualizacaoDeStatus(status);
+      }
+    }
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Cenário A/B do Fluxo de Conversas Simultâneas
+// ----------------------------------------------------------------------------
+async function tratarMensagemRecebida(msg: any, phoneNumberId: string) {
+  const telefoneCliente: string = msg.from; // já vem em formato internacional, sem "+"
+  const tipo: string = msg.type; // 'text' | 'image' | 'audio' | 'document' | ...
+  const texto: string = extrairTexto(msg);
+
+  // linha (número da empresa) que recebeu a mensagem
+  const { data: numero } = await sb
+    .from("whatsapp_numeros")
+    .select("linha_id")
+    .eq("phone_number_id", phoneNumberId)
+    .maybeSingle();
+
+  // ---- procura um atendimento já aberto para este telefone (Cenário A) ----
+  const { data: atendimentoExistente } = await sb
+    .from("atendimentos")
+    .select("id, protocolo")
+    .eq("cliente_telefone", telefoneCliente)
+    .in("status", ["aberto", "em_andamento"])
+    .order("criado_em", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  let atendimentoId: string;
+  let ehNovoAtendimento = false;
+  let protocolo = "";
+
+  if (atendimentoExistente) {
+    atendimentoId = atendimentoExistente.id;
+    protocolo = atendimentoExistente.protocolo;
+  } else {
+    // ---- Cenário B: cria um novo protocolo, sem agente_id (fila) ----
+    const { data: novo, error } = await sb
+      .from("atendimentos")
+      .insert({
+        linha_id: numero?.linha_id ?? null,
+        cliente_telefone: telefoneCliente,
+        descricao_problema: texto || `Mensagem recebida (${tipo})`,
+        canal: "whatsapp_api",
+        status: "aberto",
+        agente_id: null, // fica em "não assumidos" até um técnico assumir
+      })
+      .select("id, protocolo")
+      .single();
+
+    if (error || !novo) {
+      console.error("[whatsapp-webhook] erro ao criar atendimento:", error);
+      return;
+    }
+    atendimentoId = novo.id;
+    protocolo = novo.protocolo;
+    ehNovoAtendimento = true;
+  }
+
+  // ---- grava a interação (histórico "humano") ----
+  const { data: interacao } = await sb
+    .from("interacoes")
+    .insert({
+      atendimento_id: atendimentoId,
+      agente_id: null, // mensagem do cliente, não de um agente
+      tipo: "mensagem_recebida",
+      conteudo: texto || `[${tipo}] arquivo recebido`,
+    })
+    .select("id")
+    .single();
+
+  // ---- log bruto da mensagem ----
+  await sb.from("mensagens_whatsapp").insert({
+    atendimento_id: atendimentoId,
+    interacao_id: interacao?.id ?? null,
+    wa_message_id: msg.id,
+    direcao: "recebida",
+    tipo_conteudo: mapTipoConteudo(tipo),
+    status: "entregue",
+    payload_bruto: msg,
+  });
+
+  // ---- mídia (se houver): delega o download para a função whatsapp-midia ----
+  const mediaId = msg?.image?.id ?? msg?.audio?.id ?? msg?.document?.id ?? msg?.video?.id;
+  if (mediaId) {
+    await chamarFuncaoInterna("whatsapp-midia", {
+      media_id: mediaId,
+      atendimento_id: atendimentoId,
+      interacao_id: interacao?.id,
+      nome_arquivo: msg?.document?.filename ?? null,
+    });
+  }
+
+  // ---- confirmação automática (sempre, decisão já validada) ----
+  if (ehNovoAtendimento) {
+    const mensagemConfirmacao =
+      `Olá! 👋\n\nRecebemos sua mensagem e um protocolo já foi aberto.\n` +
+      `Protocolo: ${protocolo}\n\n` +
+      `Em breve um de nossos técnicos dará continuidade ao seu atendimento por aqui.`;
+
+    await chamarFuncaoInterna("whatsapp-enviar", {
+      atendimento_id: atendimentoId,
+      telefone: telefoneCliente,
+      texto: mensagemConfirmacao,
+      agente_id: null, // mensagem automática do sistema, não de um técnico
+    });
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Atualiza o status (entregue/lida/falhou) de uma mensagem já enviada
+// ----------------------------------------------------------------------------
+async function tratarAtualizacaoDeStatus(status: any) {
+  const mapa: Record<string, string> = {
+    sent: "enviada",
+    delivered: "entregue",
+    read: "lida",
+    failed: "falhou",
+  };
+  const statusInterno = mapa[status?.status] ?? null;
+  if (!statusInterno) return;
+
+  await sb
+    .from("mensagens_whatsapp")
+    .update({ status: statusInterno })
+    .eq("wa_message_id", status.id);
+}
+
+// ----------------------------------------------------------------------------
+// Auxiliares
+// ----------------------------------------------------------------------------
+function extrairTexto(msg: any): string {
+  if (msg.type === "text") return msg.text?.body ?? "";
+  if (msg.type === "interactive") {
+    return msg.interactive?.list_reply?.title ?? msg.interactive?.button_reply?.title ?? "";
+  }
+  return msg?.[msg.type]?.caption ?? "";
+}
+
+function mapTipoConteudo(tipoMeta: string): string {
+  if (tipoMeta === "image") return "imagem";
+  if (tipoMeta === "audio") return "audio";
+  if (tipoMeta === "document") return "documento";
+  return "texto";
+}
+
+// chama outra Edge Function do mesmo projeto, autenticando com a service role
+async function chamarFuncaoInterna(nome: string, corpo: Record<string, unknown>) {
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/${nome}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+    },
+    body: JSON.stringify(corpo),
+  });
+  if (!resp.ok) {
+    console.error(`[whatsapp-webhook] falha ao chamar ${nome}:`, await resp.text());
+  }
+}
