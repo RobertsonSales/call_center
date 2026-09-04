@@ -682,6 +682,9 @@
           <button class="btn btn-ghost btn-sm" id="btn-excel-historico">⬇ Excel</button>
         </div>
         <div id="historico-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
+        <div id="historico-carregar-mais-wrap" style="display:none;text-align:center;margin-top:14px;">
+          <button class="btn btn-ghost btn-sm" id="btn-historico-carregar-mais">Carregar mais resultados</button>
+        </div>
       </div>
     </section>
 
@@ -817,6 +820,9 @@
           <button class="btn btn-ghost btn-sm" id="btn-excel-supervisao">⬇ Excel</button>
         </div>
         <div id="supervisao-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
+        <div id="supervisao-carregar-mais-wrap" style="display:none;text-align:center;margin-top:14px;">
+          <button class="btn btn-ghost btn-sm" id="btn-supervisao-carregar-mais">Carregar mais resultados</button>
+        </div>
       </div>
     </section>
 
@@ -828,7 +834,13 @@
           <p class="section-title">Novo agente</p>
           <div class="field"><label>Nome</label><input id="fa-nome" placeholder="Ex: Maria Souza"/></div>
           <div class="field"><label>E-mail</label><input id="fa-email" type="email" placeholder="maria@empresa.com"/></div>
-          <div class="field"><label>Senha provisória</label><input id="fa-senha" type="password" placeholder="mínimo 6 caracteres"/></div>
+          <div class="field">
+            <label>Senha provisória</label>
+            <div class="password-group">
+              <input id="fa-senha" type="password" placeholder="mínimo 6 caracteres" autocomplete="new-password"/>
+              <button type="button" class="password-toggle" id="btn-toggle-fa-senha" title="Mostrar/ocultar senha" aria-label="Mostrar ou ocultar senha">👁</button>
+            </div>
+          </div>
           <div class="field"><label>Papel inicial</label><select id="fa-papel"></select></div>
           <button class="btn btn-primary btn-block" id="btn-criar-agente">Criar agente</button>
           <p class="hint">A conta já entra confirmada e pronta para uso. Recomende que o agente troque a senha no primeiro acesso.</p>
@@ -949,6 +961,15 @@ let atendimentosComMensagemNova = new Set(); // ids de atendimentos com mensagem
 let agentesCache = [];
 let historicoDataAtual = [];
 let supervisaoDataAtual = [];
+// paginação de Histórico/Supervisão: sem limite artificial de 300 registros
+// — carrega em lotes, e o botão "Carregar mais" busca o próximo lote,
+// preservando acesso a todo o histórico independentemente da data de
+// criação (ver PAGINA_TAMANHO abaixo).
+const PAGINA_TAMANHO = 300;
+let historicoOffset = 0;
+let historicoTemMais = false;
+let supervisaoOffset = 0;
+let supervisaoTemMais = false;
 let metricasDimensaoAtual = 'unidade';
 let metricasDadosAtual = {};
 let chartMetricasVolume = null;
@@ -1169,6 +1190,7 @@ function alternarVisibilidadeSenha(inputId, btnId){
 }
 alternarVisibilidadeSenha('login-password', 'btn-toggle-senha');
 alternarVisibilidadeSenha('nova-senha-input', 'btn-toggle-nova-senha');
+alternarVisibilidadeSenha('fa-senha', 'btn-toggle-fa-senha');
 
 // ---------------- ESQUECI MINHA SENHA ----------------
 $('#link-esqueci-senha').addEventListener('click', async (e)=>{
@@ -3116,9 +3138,15 @@ $('#btn-limpar-supervisao')?.addEventListener('click', ()=>{
   renderSupervisao();
 });
 
-async function renderSupervisao(){
+async function renderSupervisao(resetPagina = true){
   const wrap = $('#supervisao-table-wrap');
-  wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Carregando…</div>';
+  const wrapMais = $('#supervisao-carregar-mais-wrap');
+  const btnMais = $('#btn-supervisao-carregar-mais');
+  if(resetPagina){
+    wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Carregando…</div>';
+    supervisaoOffset = 0;
+    supervisaoDataAtual = [];
+  }
 
   const hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
   const [{count:cTotal}, {count:cAberto}, {count:cHoje}] = await Promise.all([
@@ -3130,7 +3158,11 @@ async function renderSupervisao(){
   $('#stat-sup-abertos').textContent = cAberto ?? 0;
   $('#stat-sup-hoje').textContent = cHoje ?? 0;
 
-  let q = sb.from('atendimentos').select('*, linhas(nome), agentes(nome)').order('criado_em', {ascending:false}).limit(300);
+  // Sem .limit() fixo: busca por faixas (range), que juntas cobrem todo o
+  // histórico, não só os últimos 300 registros — ver PAGINA_TAMANHO.
+  let q = sb.from('atendimentos').select('*, linhas(nome), agentes(nome)')
+    .order('criado_em', {ascending:false})
+    .range(supervisaoOffset, supervisaoOffset + PAGINA_TAMANHO - 1);
 
   const de = $('#fs-de').value, ate = $('#fs-ate').value;
   const protocolo = $('#fs-protocolo').value.trim();
@@ -3146,13 +3178,26 @@ async function renderSupervisao(){
   if(status) q = q.eq('status', status);
 
   const { data, error } = await q;
-  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar. Confirme que este usuário está marcado como Supervisor (is_admin) no banco.</p>'; renderMetricas([]); return; }
-  renderMetricas(data || []);
-  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>Nenhum resultado para os filtros aplicados.</div>`; supervisaoDataAtual = []; return; }
-  supervisaoDataAtual = data;
-  wrap.innerHTML = tabelaAtendimentos(data, {mostrarAgente:true, mostrarReenviar:true});
+  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar. Confirme que este usuário está marcado como Supervisor ou Administrador Pleno no banco.</p>'; renderMetricas([]); wrapMais.style.display='none'; return; }
+
+  supervisaoTemMais = (data || []).length === PAGINA_TAMANHO;
+  supervisaoDataAtual = resetPagina ? (data || []) : supervisaoDataAtual.concat(data || []);
+  supervisaoOffset += (data || []).length;
+
+  renderMetricas(supervisaoDataAtual);
+  if(!supervisaoDataAtual.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>Nenhum resultado para os filtros aplicados.</div>`; wrapMais.style.display='none'; return; }
+  wrap.innerHTML = tabelaAtendimentos(supervisaoDataAtual, {mostrarAgente:true, mostrarReenviar:true});
   bindRowClicks(wrap);
+
+  wrapMais.style.display = supervisaoTemMais ? 'block' : 'none';
+  if(btnMais){ btnMais.disabled = false; btnMais.textContent = 'Carregar mais resultados'; }
 }
+
+$('#btn-supervisao-carregar-mais')?.addEventListener('click', async (e)=>{
+  const btn = e.currentTarget;
+  btn.disabled = true; btn.textContent = 'Carregando…';
+  await renderSupervisao(false);
+});
 
 $('#btn-pdf-supervisao')?.addEventListener('click', ()=> exportarPDF(supervisaoDataAtual, 'Supervisão — todos os atendimentos', true, 'view'));
 $('#btn-excel-supervisao')?.addEventListener('click', ()=> exportarExcel(supervisaoDataAtual, 'supervisao_atendimentos', true));
@@ -3503,11 +3548,21 @@ $('#btn-limpar-historico').addEventListener('click', ()=>{
   renderHistorico();
 });
 
-async function renderHistorico(){
+async function renderHistorico(resetPagina = true){
   const wrap = $('#historico-table-wrap');
-  wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Carregando…</div>';
+  const wrapMais = $('#historico-carregar-mais-wrap');
+  const btnMais = $('#btn-historico-carregar-mais');
+  if(resetPagina){
+    wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Carregando…</div>';
+    historicoOffset = 0;
+    historicoDataAtual = [];
+  }
 
-  let q = sb.from('atendimentos').select('*, linhas(nome), agentes(nome)').order('criado_em', {ascending:false}).limit(300);
+  // Sem .limit() fixo: busca por faixas (range), que juntas cobrem todo o
+  // histórico, não só os últimos 300 registros — ver PAGINA_TAMANHO.
+  let q = sb.from('atendimentos').select('*, linhas(nome), agentes(nome)')
+    .order('criado_em', {ascending:false})
+    .range(historicoOffset, historicoOffset + PAGINA_TAMANHO - 1);
 
   const de = $('#fh-de').value, ate = $('#fh-ate').value;
   const protocolo = $('#fh-protocolo').value.trim();
@@ -3521,12 +3576,25 @@ async function renderHistorico(){
   if(status) q = q.eq('status', status);
 
   const { data, error } = await q;
-  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar histórico.</p>'; return; }
-  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>Nenhum resultado para os filtros aplicados.</div>`; historicoDataAtual = []; return; }
-  historicoDataAtual = data;
-  wrap.innerHTML = tabelaAtendimentos(data, {mostrarAgente:true, mostrarReenviar:true});
+  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar histórico.</p>'; wrapMais.style.display='none'; return; }
+
+  historicoTemMais = (data || []).length === PAGINA_TAMANHO;
+  historicoDataAtual = resetPagina ? (data || []) : historicoDataAtual.concat(data || []);
+  historicoOffset += (data || []).length;
+
+  if(!historicoDataAtual.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>Nenhum resultado para os filtros aplicados.</div>`; wrapMais.style.display='none'; return; }
+  wrap.innerHTML = tabelaAtendimentos(historicoDataAtual, {mostrarAgente:true, mostrarReenviar:true});
   bindRowClicks(wrap);
+
+  wrapMais.style.display = historicoTemMais ? 'block' : 'none';
+  if(btnMais){ btnMais.disabled = false; btnMais.textContent = 'Carregar mais resultados'; }
 }
+
+$('#btn-historico-carregar-mais')?.addEventListener('click', async (e)=>{
+  const btn = e.currentTarget;
+  btn.disabled = true; btn.textContent = 'Carregando…';
+  await renderHistorico(false);
+});
 
 $('#btn-pdf-historico').addEventListener('click', ()=> exportarPDF(historicoDataAtual, 'Histórico de atendimentos', true, 'view'));
 $('#btn-excel-historico').addEventListener('click', ()=> exportarExcel(historicoDataAtual, 'historico_atendimentos', true));
