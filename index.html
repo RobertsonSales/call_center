@@ -3806,10 +3806,11 @@ let atendimentoAtualId = null;
 // Monta a linha do tempo em formato de conversa (balões), a partir das
 // mesmas interações que a aplicação já grava hoje — nenhuma tabela nova.
 // Ver documento "Janela de Conversa por Atendimento".
-function renderJanelaConversa(interacoes){
+function renderJanelaConversa(interacoes, statusPorInteracao){
   if(!interacoes || !interacoes.length){
     return '<p class="hint" style="padding:14px;text-align:center;">Nenhuma mensagem ainda — o histórico aparece aqui assim que a conversa começar.</p>';
   }
+  statusPorInteracao = statusPorInteracao || {};
   return interacoes.map(i=>{
     const hora = fmtData(i.criado_em);
 
@@ -3831,10 +3832,24 @@ function renderJanelaConversa(interacoes){
           : `<div style="margin-top:6px;"><a href="${i.anexo_url}" target="_blank" rel="noopener">📎 ${escapeHtml(i.anexo_nome||'Ver anexo')}</a></div>`)
       : '';
 
+    // status de entrega (só existe para mensagens enviadas pela API — ver
+    // mensagens_whatsapp, alimentada pelo whatsapp-enviar e atualizada
+    // pelos eventos de status do whatsapp-webhook). Ajuda a diagnosticar
+    // "mensagem aceita, mas não chegou" sem precisar perguntar de novo.
+    let statusHtml = '';
+    if(!doCliente){
+      const info = statusPorInteracao[i.id];
+      if(info?.status === 'lida') statusHtml = `<div class="chat-meta">✓✓ Lida</div>`;
+      else if(info?.status === 'entregue') statusHtml = `<div class="chat-meta">✓✓ Entregue</div>`;
+      else if(info?.status === 'enviada') statusHtml = `<div class="chat-meta">✓ Enviada</div>`;
+      else if(info?.status === 'falhou') statusHtml = `<div class="chat-meta" style="color:#ffb4b4;">⚠ Falhou${info.erro ? ': '+escapeHtml(info.erro) : ''}</div>`;
+    }
+
     return `<div class="chat-bubble ${doCliente?'cliente':'agente'}">
       ${i.conteudo ? escapeHtml(i.conteudo) : ''}
       ${anexoHtml}
       <div class="chat-meta">${doCliente ? 'Cliente' : escapeHtml(i.agentes?.nome || 'Sistema')} · ${hora}</div>
+      ${statusHtml}
     </div>`;
   }).join('');
 }
@@ -3846,14 +3861,27 @@ async function abrirDetalhe(id){
   overlay.classList.add('active');
   $('#modal-body').innerHTML = '<div class="loading-row"><div class="spinner"></div>Carregando…</div>';
 
-  const [{data:atendimento}, {data:interacoes}] = await Promise.all([
+  const [{data:atendimento}, {data:interacoes}, {data:mensagensWa}] = await Promise.all([
     sb.from('atendimentos').select('*, linhas(nome, numero), agentes(nome, email)').eq('id', id).single(),
-    sb.from('interacoes').select('*, agentes(nome)').eq('atendimento_id', id).order('criado_em', {ascending:true})
+    sb.from('interacoes').select('*, agentes(nome)').eq('atendimento_id', id).order('criado_em', {ascending:true}),
+    sb.from('mensagens_whatsapp').select('interacao_id, status, payload_bruto').eq('atendimento_id', id)
   ]);
 
   if(!atendimento){ $('#modal-body').innerHTML = '<p class="hint">Atendimento não encontrado.</p>'; return; }
 
   $('#modal-protocolo').textContent = atendimento.protocolo;
+
+  // status de entrega por interação, para os balões da Janela de Conversa
+  // (ver renderJanelaConversa) — statuses.errors[0].title é onde a Meta
+  // costuma explicar o motivo quando o status é "failed".
+  const statusPorInteracao = {};
+  (mensagensWa || []).forEach(m => {
+    if(!m.interacao_id) return;
+    statusPorInteracao[m.interacao_id] = {
+      status: m.status,
+      erro: m.payload_bruto?.errors?.[0]?.title || null
+    };
+  });
 
   $('#modal-body').innerHTML = `
     <div class="ticket" style="margin-top:14px;">
@@ -3899,7 +3927,7 @@ async function abrirDetalhe(id){
     </div>
 
     <p class="section-title" style="margin-bottom:10px;">Conversa</p>
-    <div class="chat-wrap" id="chat-wrap">${renderJanelaConversa(interacoes)}</div>
+    <div class="chat-wrap" id="chat-wrap">${renderJanelaConversa(interacoes, statusPorInteracao)}</div>
 
     <div class="chat-composer" id="chat-composer">
       <textarea id="chat-composer-texto" placeholder="Escreva uma mensagem para o cliente…"></textarea>
@@ -4171,12 +4199,10 @@ function mostrarFormularioEnvio(atendimento, interacoes, modo){
 }
 
 async function confirmarEnvio(atendimento, interacoes, modo){
-  // Este fluxo permanece no modo manual (link do WhatsApp), mesmo em linhas
-  // já conectadas à API — o destinatário aqui costuma ser um colega ou um
-  // técnico externo, não necessariamente quem já está numa conversa aberta
-  // com o número da empresa, então a Meta normalmente exigiria um template
-  // aprovado para iniciar essa conversa (Fase 6, ainda não concluída).
-  // Reavaliar quando os templates de transferência estiverem aprovados.
+  // Antes este fluxo ficava sempre no modo manual — foi ajustado para usar
+  // a API sempre que a linha já estiver conectada, unificando com o resto
+  // da Janela de Conversa. Só cai no link do WhatsApp (winWhats) quando a
+  // linha ainda não migrou.
   const ehTransferencia = modo === 'transferir';
   const nome = $('#dest-nome').value.trim();
   const telefone = comDDI55($('#dest-telefone').value);
@@ -4186,9 +4212,10 @@ async function confirmarEnvio(atendimento, interacoes, modo){
 
   if(!telefone){ toast('Informe o WhatsApp do destinatário.'); return; }
 
-  // precisa ser aberta aqui, antes do upload/gravação abaixo (que são
-  // assíncronos) — ver abrirAbaWhatsAppSincrono.
-  const winWhats = abrirAbaWhatsAppSincrono();
+  const usaApi = atendimento.canal === 'whatsapp_api' || linhaTemApiAtiva(atendimento.linha_id);
+  // só abre a aba de forma síncrona quando o caminho é o manual — no
+  // caminho API o envio acontece direto pela Edge Function, sem aba alguma.
+  const winWhats = usaApi ? null : abrirAbaWhatsAppSincrono();
 
   const btn = $('#btn-confirmar-envio');
   btn.disabled = true;
@@ -4211,15 +4238,37 @@ async function confirmarEnvio(atendimento, interacoes, modo){
     if(ehTransferencia){
       await sb.from('atendimentos').update({status:'transferido'}).eq('id', atendimento.id);
     }
-    await sb.from('interacoes').insert({
-      atendimento_id: atendimento.id, agente_id: currentAgente.id,
-      tipo: ehTransferencia ? 'transferencia' : 'reenvio',
-      conteudo: (ehTransferencia ? 'Atendimento transferido para ' : 'Histórico reenviado para ') + (nome ? nome+' — ' : '') + '+'+telefone,
-      destinatario_telefone: telefone, destinatario_nome: nome || null,
-      anexo_url: anexoUrl, anexo_nome: anexoNome
-    });
 
-    mostrarConfirmacaoEnvioModal(atendimento.id, ehTransferencia ? 'Transferência registrada' : 'Histórico pronto para reenvio', resumo, telefone, winWhats);
+    if(usaApi){
+      // envia direto pela API — a Edge Function já grava sua própria
+      // interação "mensagem"; ainda registramos uma marca de
+      // transferência/reenvio, para o evento ficar visível na conversa.
+      try{
+        await enviarViaWhatsAppApi({ atendimentoId: atendimento.id, telefone, texto: resumo, agenteId: currentAgente.id });
+      }catch(errEnvio){
+        console.error('[confirmar-envio] falha ao enviar via API:', errEnvio);
+        toast('Registrado, mas o envio automático falhou: '+errEnvio.message);
+      }
+      await sb.from('interacoes').insert({
+        atendimento_id: atendimento.id, agente_id: currentAgente.id,
+        tipo: ehTransferencia ? 'transferencia' : 'reenvio',
+        conteudo: (ehTransferencia ? 'Atendimento transferido para ' : 'Histórico reenviado para ') + (nome ? nome+' — ' : '') + '+'+telefone,
+        destinatario_telefone: telefone, destinatario_nome: nome || null,
+        anexo_url: anexoUrl, anexo_nome: anexoNome
+      });
+      toast(ehTransferencia ? 'Transferência registrada e enviada.' : 'Histórico reenviado.');
+      abrirDetalhe(atendimento.id);
+      atualizarListaAtivaEmSegundoPlano();
+    }else{
+      await sb.from('interacoes').insert({
+        atendimento_id: atendimento.id, agente_id: currentAgente.id,
+        tipo: ehTransferencia ? 'transferencia' : 'reenvio',
+        conteudo: (ehTransferencia ? 'Atendimento transferido para ' : 'Histórico reenviado para ') + (nome ? nome+' — ' : '') + '+'+telefone,
+        destinatario_telefone: telefone, destinatario_nome: nome || null,
+        anexo_url: anexoUrl, anexo_nome: anexoNome
+      });
+      mostrarConfirmacaoEnvioModal(atendimento.id, ehTransferencia ? 'Transferência registrada' : 'Histórico pronto para reenvio', resumo, telefone, winWhats);
+    }
   }catch(err){
     console.error('[confirmar-envio]', err);
     toast('Erro ao registrar: '+(err?.message||err));
