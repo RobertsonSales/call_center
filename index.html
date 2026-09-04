@@ -550,11 +550,12 @@
             <div class="phone-group"><span class="phone-prefix">+55</span><input id="f-telefone" inputmode="numeric" placeholder="(21) 98888-7777"/></div>
           </div>
           <div class="field"><label>Equipamento</label><input id="f-equipamento" placeholder="Digite para buscar na base ou informe um novo…" autocomplete="off"/></div>
+          <div class="field"><label>Número de série</label><input id="f-numero-serie" placeholder="Preenchido automaticamente ao selecionar do catálogo"/></div>
           <div class="field"><label>Descrição inicial do problema</label><textarea id="f-descricao" rows="3" placeholder="Ex: equipamento não liga após queda de energia"></textarea></div>
           <div class="field"><label>Procedimento sugerido (opcional)</label><textarea id="f-procedimento" rows="2" placeholder="Ex: verificar se o cabo de força está bem conectado e reiniciar o equipamento"></textarea></div>
           <div class="field"><label>Outras observações do cliente (opcional)</label><textarea id="f-observacoes" rows="2" placeholder="Ex: cliente relatou que o problema começou após uma queda de energia"></textarea></div>
           <div class="hint" id="catalogo-selecionado-hint" style="display:none;margin-bottom:10px;"></div>
-          <div style="display:flex;gap:8px;">
+          <div style="display:flex;gap:8px;" id="novo-form-botoes">
             <button class="btn btn-primary" style="flex:1;" id="btn-criar-atendimento">Gerar protocolo</button>
             <button class="btn btn-ghost" id="btn-cancelar-novo">Cancelar</button>
           </div>
@@ -1385,7 +1386,7 @@ function switchView(view){
   if(view==='agentes') renderAgentes();
   if(view==='catalogo') renderCatalogo();
   if(view==='categorias') renderCategorias();
-  if(view==='novo'){ $('#novo-confirmacao').style.display='none'; $('#novo-form-preview').style.display='block'; }
+  if(view==='novo'){ $('#novo-confirmacao').style.display='none'; $('#novo-form-preview').style.display='block'; $('#novo-form-botoes').style.display='flex'; }
   if(view==='volume'){ $('#vt-confirmacao').style.display='none'; $('#volume-form-preview').style.display='block'; }
 }
 
@@ -1570,8 +1571,20 @@ async function editarLinha(linha){
 }
 
 async function alternarAtivoLinha(linha){
-  const { error } = await sb.from('linhas').update({ ativo: !linha.ativo }).eq('id', linha.id);
+  // .select() no final é o que permite perceber quando a política de
+  // segurança (RLS) bloqueia a alteração sem gerar um "error" explícito —
+  // sem isso, um UPDATE que afeta 0 linhas ainda assim é reportado como
+  // sucesso pelo Supabase, e o toast mentiria dizendo que funcionou.
+  const { data, error } = await sb.from('linhas')
+    .update({ ativo: !linha.ativo })
+    .eq('id', linha.id)
+    .select('id, ativo');
+
   if(error){ toast('Erro ao atualizar status: '+error.message); return; }
+  if(!data || !data.length){
+    toast('Não foi possível alterar o status — a alteração não foi confirmada pelo banco (possível bloqueio de permissão). Tente fazer logout/login e repetir.');
+    return;
+  }
   toast(linha.ativo ? 'Linha inativada.' : 'Linha ativada.');
   await carregarLinhas();
   renderLinhas();
@@ -2002,6 +2015,7 @@ function selecionarDoCatalogo(equip){
   $('#f-nome').value = equip.clientes?.nome || '';
   $('#f-cliente-grupo').value = equip.clientes?.cliente_grupo || '';
   $('#f-equipamento').value = equip.nome || '';
+  $('#f-numero-serie').value = equip.numero_serie || '';
   if(equip.clientes?.telefone){
     $('#f-telefone').value = formatarCelularBR(equip.clientes.telefone.replace(/^55/, ''));
   }
@@ -2301,9 +2315,10 @@ let timerBuscaEquipNovo = null;
 $('#f-equipamento').addEventListener('input', ()=>{
   clearTimeout(timerBuscaEquipNovo);
   // qualquer edição manual do texto invalida uma seleção anterior feita
-  // por clique — só voltamos a vincular um equipamento_id quando o
-  // usuário clicar de novo num resultado da lista.
+  // por clique — só voltamos a vincular um equipamento_id (e a série
+  // correspondente) quando o usuário clicar de novo num resultado da lista.
   catalogoSelecionado.equipamento_id = null;
+  $('#f-numero-serie').value = '';
 
   const q = $('#f-equipamento').value.trim();
 
@@ -2356,13 +2371,14 @@ $('#f-equipamento').addEventListener('blur', ()=>{
 
 function limparFormularioNovoAtendimento(){
   $('#f-nome').value=''; $('#f-cliente-grupo').value=''; $('#f-telefone').value='';
-  $('#f-equipamento').value=''; $('#f-descricao').value=''; $('#f-procedimento').value=''; $('#f-observacoes').value='';
+  $('#f-equipamento').value=''; $('#f-numero-serie').value=''; $('#f-descricao').value=''; $('#f-procedimento').value=''; $('#f-observacoes').value='';
   $('#preview-text').textContent = 'Preencha o formulário ao lado para ver a prévia…';
   $('#catalogo-selecionado-hint').style.display = 'none';
   esconderResultadosNovo();
   catalogoSelecionado = { cliente_id: null, equipamento_id: null };
   $('#novo-confirmacao').style.display = 'none';
   $('#novo-form-preview').style.display = 'block';
+  $('#novo-form-botoes').style.display = 'flex';
   ultimoAtendimentoCriadoId = null;
 }
 
@@ -2443,6 +2459,11 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
 
     $('#novo-form-preview').style.display = 'none';
     $('#novo-confirmacao').style.display = 'block';
+    // depois de gerado o protocolo, "Gerar protocolo"/"Cancelar" perdem o
+    // sentido aqui (reenviar o mesmo formulário criaria um protocolo
+    // duplicado) — reaparecem só quando um novo atendimento for iniciado,
+    // em limparFormularioNovoAtendimento().
+    $('#novo-form-botoes').style.display = 'none';
     $('#novo-confirmacao-protocolo').textContent = data.protocolo;
     $('#novo-confirmacao-mensagem').textContent = mensagem;
     const link = $('#novo-confirmacao-link');
