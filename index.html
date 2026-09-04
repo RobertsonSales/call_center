@@ -1308,8 +1308,8 @@ async function afterLogin(session){
     $('#login-view').style.display = 'none';
     $('#app-view').style.display = 'block';
 
-    try{ await carregarLinhas(); }catch(e){ console.error('[login] erro ao carregar linhas:', e); }
     try{ await carregarLinhasComApi(); }catch(e){ console.error('[login] erro ao carregar linhas com API do WhatsApp:', e); }
+    try{ await carregarLinhas(); }catch(e){ console.error('[login] erro ao carregar linhas:', e); }
     try{ iniciarRealtimeWhatsApp(); }catch(e){ console.error('[login] erro ao iniciar Realtime do WhatsApp:', e); }
     try{ await renderDashboard(); }catch(e){ console.error('[login] erro ao renderizar painel:', e); }
 
@@ -1414,8 +1414,15 @@ async function carregarLinhas(){
   const selVolume = $('#vt-linha');
   const selHist = $('#fh-linha');
   const selSup = $('#fs-linha');
-  selNovo.innerHTML = linhasCache.map(l=>`<option value="${l.id}">${l.nome} (${l.numero})</option>`).join('') || '<option value="">Nenhuma linha cadastrada</option>';
-  if(selVolume) selVolume.innerHTML = linhasCache.map(l=>`<option value="${l.id}">${l.nome} (${l.numero})</option>`).join('') || '<option value="">Nenhuma linha cadastrada</option>';
+  // Indica claramente, no próprio texto da opção, quando a Linha já está
+  // conectada à API do WhatsApp (linhasComApiCache) — evita a confusão de
+  // um técnico escolher uma Linha achando que ainda é o modo manual (link),
+  // quando na verdade a mensagem sairia pelo phone_number_id vinculado a
+  // ela em whatsapp_numeros, que pode ser um número diferente do exibido
+  // aqui em l.numero.
+  const rotuloLinha = (l) => `${l.nome} (${l.numero})${linhasComApiCache.has(l.id) ? ' 🟢 API' : ''}`;
+  selNovo.innerHTML = linhasCache.map(l=>`<option value="${l.id}">${rotuloLinha(l)}</option>`).join('') || '<option value="">Nenhuma linha cadastrada</option>';
+  if(selVolume) selVolume.innerHTML = linhasCache.map(l=>`<option value="${l.id}">${rotuloLinha(l)}</option>`).join('') || '<option value="">Nenhuma linha cadastrada</option>';
   selHist.innerHTML = '<option value="">Todas</option>' + linhasCache.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');
   if(selSup) selSup.innerHTML = '<option value="">Todas</option>' + linhasCache.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('');
 }
