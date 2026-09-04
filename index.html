@@ -829,6 +829,7 @@
           <div class="field"><label>Nome</label><input id="fa-nome" placeholder="Ex: Maria Souza"/></div>
           <div class="field"><label>E-mail</label><input id="fa-email" type="email" placeholder="maria@empresa.com"/></div>
           <div class="field"><label>Senha provisória</label><input id="fa-senha" type="password" placeholder="mínimo 6 caracteres"/></div>
+          <div class="field"><label>Papel inicial</label><select id="fa-papel"></select></div>
           <button class="btn btn-primary btn-block" id="btn-criar-agente">Criar agente</button>
           <p class="hint">A conta já entra confirmada e pronta para uso. Recomende que o agente troque a senha no primeiro acesso.</p>
         </div>
@@ -3225,7 +3226,25 @@ $('#btn-criar-categoria')?.addEventListener('click', async ()=>{
 });
 $('#btn-cancelar-edicao-categoria')?.addEventListener('click', cancelarEdicaoCategoria);
 
+// Preenche o seletor de papel do formulário "Novo agente" — só mostra
+// "Administrador Pleno" como opção para quem já é Administrador Pleno
+// (mesma regra de segurança do seletor de edição: ninguém cria um papel
+// mais alto do que o seu próprio pela tela). O primeiro Administrador
+// Pleno da aplicação precisa nascer por SQL direto no banco — ver o
+// capítulo 6 da Arquitetura de Permissões.
+function popularSeletorPapelInicial(){
+  const sel = $('#fa-papel');
+  if(!sel) return;
+  const opcoes = [
+    ['tecnico', 'Técnico'],
+    ['supervisor', 'Supervisor'],
+  ];
+  if(currentAgente.ehAdminPleno) opcoes.push(['admin_pleno', 'Administrador Pleno']);
+  sel.innerHTML = opcoes.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+}
+
 async function renderAgentes(){
+  popularSeletorPapelInicial();
   const wrap = $('#agentes-table-wrap');
   const { data, error } = await sb.from('agentes').select('*').order('nome');
   if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar agentes.</p>'; return; }
@@ -3327,6 +3346,7 @@ $('#btn-criar-agente')?.addEventListener('click', async ()=>{
   const nome = $('#fa-nome').value.trim();
   const email = $('#fa-email').value.trim();
   const senha = $('#fa-senha').value;
+  const papelInicial = $('#fa-papel')?.value || 'tecnico';
   if(!nome || !email || !senha){ toast('Preencha nome, e-mail e senha.'); return; }
   if(senha.length < 6){ toast('A senha precisa ter ao menos 6 caracteres.'); return; }
 
@@ -3334,8 +3354,32 @@ $('#btn-criar-agente')?.addEventListener('click', async ()=>{
   btn.disabled = true; btn.textContent = 'Criando…';
   try{
     await chamarApiAgentes('POST', { nome, email, senha });
+
+    // A função serverless /api/agentes cria a conta sempre como Técnico
+    // (papel padrão da coluna no banco); se um papel diferente foi
+    // escolhido no formulário, aplicamos aqui em seguida, com um UPDATE
+    // comum — passa pelas mesmas políticas de segurança (RLS) de sempre,
+    // então um Supervisor não consegue burlar a regra criando alguém
+    // direto como Administrador Pleno (a opção nem aparece pra ele — ver
+    // popularSeletorPapelInicial — mas o banco também bloquearia).
+    if(papelInicial !== 'tecnico'){
+      const { data: novoAgente, error: erroBusca } = await sb.from('agentes')
+        .select('id').eq('email', email).maybeSingle();
+      if(erroBusca || !novoAgente){
+        console.error('[criar-agente] não encontrei o registro recém-criado para ajustar o papel:', erroBusca);
+        toast('Agente criado, mas não consegui definir o papel automaticamente — ajuste na lista ao lado.');
+      }else{
+        const { error: erroPapel } = await sb.from('agentes')
+          .update({ papel: papelInicial, is_admin: true })
+          .eq('id', novoAgente.id);
+        if(erroPapel){
+          toast('Agente criado, mas o papel não pôde ser definido: '+erroPapel.message);
+        }
+      }
+    }
+
     toast('Agente criado com sucesso.');
-    $('#fa-nome').value=''; $('#fa-email').value=''; $('#fa-senha').value='';
+    $('#fa-nome').value=''; $('#fa-email').value=''; $('#fa-senha').value=''; $('#fa-papel').value='tecnico';
     renderAgentes();
   }catch(e){
     toast(e.message);
