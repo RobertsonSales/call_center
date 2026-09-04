@@ -157,6 +157,14 @@
     outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-light);background:var(--input-bg-focus);
   }
   .field select option{ color:#16212E; background:#FFFFFF; }
+  /* seletor compacto usado fora de formulários (ex.: papel do agente, na
+     tabela de Agentes) — mesma aparência dos campos de formulário, só que
+     menor e com largura automática, para caber numa célula de tabela. */
+  .select-compacto{
+    padding:6px 8px;border:1.5px solid var(--border);border-radius:var(--radius-sm);
+    font-size:12.5px;color:var(--input-text);background:var(--input-bg);width:auto;
+  }
+  .select-compacto option{ color:#16212E; background:#FFFFFF; }
   .btn{
     display:inline-flex;align-items:center;justify-content:center;gap:8px;
     padding:11px 18px;border-radius:var(--radius-sm);border:none;font-weight:600;font-size:14px;
@@ -324,6 +332,7 @@
   .badge-em_andamento{background:var(--warning-light);color:var(--warning);}
   .badge-transferido{background:#F0E9FB;color:#6A3FBF;}
   .badge-encerrado{background:#EAF6EC;color:#25843F;}
+  .badge-admin-pleno{background:var(--primary-light);color:var(--primary-dark);}
 
   /* ---------- MÉTRICAS DE PERFORMANCE (Supervisão) ---------- */
   .dim-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;}
@@ -1223,6 +1232,20 @@ async function afterLogin(session){
     if(agErr) console.error('[login] erro ao carregar perfil do agente:', agErr);
     currentAgente = agente || { id:user.id, nome:user.email, email:user.email, ativo:true, is_admin:false };
 
+    // A coluna "papel" (tecnico/supervisor/admin_pleno) foi adicionada pela
+    // migração 001_admin_pleno.sql. Para não quebrar nenhuma tela que já
+    // checava "is_admin" (Clientes/Equipamentos, Linhas, importação de
+    // planilha etc.), continuamos calculando is_admin normalmente a partir
+    // do papel — Supervisor e Administrador Pleno herdam tudo que o
+    // Supervisor já podia fazer. ehAdminPleno é a flag nova, usada só nos
+    // pontos exclusivos do papel mais alto (gerenciar Supervisor/Admin
+    // Pleno em Agentes — ver renderAgentes).
+    if(!currentAgente.papel){
+      currentAgente.papel = currentAgente.is_admin ? 'supervisor' : 'tecnico';
+    }
+    currentAgente.is_admin = currentAgente.papel === 'supervisor' || currentAgente.papel === 'admin_pleno';
+    currentAgente.ehAdminPleno = currentAgente.papel === 'admin_pleno';
+
     if(currentAgente.ativo === false){
       await sb.auth.signOut();
       const errBox = $('#login-error');
@@ -1240,7 +1263,7 @@ async function afterLogin(session){
       const navSup = $('#nav-supervisao'); if(navSup) navSup.style.display = 'flex';
       const navAg = $('#nav-agentes'); if(navAg) navAg.style.display = 'flex';
       const navCat = $('#nav-categorias'); if(navCat) navCat.style.display = 'flex';
-      setText('#agent-role-badge', '· Supervisor');
+      setText('#agent-role-badge', currentAgente.ehAdminPleno ? '· Administrador Pleno' : '· Supervisor');
       try{
         await carregarAgentesParaFiltro();
       }catch(e){
@@ -3199,21 +3222,46 @@ async function renderAgentes(){
   agentesCache = data || [];
   if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">👤</div>Nenhum agente encontrado.</div>`; return; }
 
+  const badgePapel = (papel)=>{
+    if(papel === 'admin_pleno') return '<span class="badge badge-admin-pleno">Administrador Pleno</span>';
+    if(papel === 'supervisor') return '<span class="badge badge-transferido">Supervisor</span>';
+    return '<span class="badge badge-em_andamento">Técnico</span>';
+  };
+
   wrap.innerHTML = `<div class="table-scroll"><table><thead><tr>
       <th>Nome</th><th>E-mail</th><th>Papel</th><th>Status</th><th></th>
     </tr></thead><tbody>
-    ${data.map(a=>`
+    ${data.map(a=>{
+      const papelAtual = a.papel || (a.is_admin ? 'supervisor' : 'tecnico');
+      // controle de papel: Administrador Pleno vê o seletor completo (3
+      // níveis); Supervisor mantém o botão binário já existente, mas só
+      // sobre quem não é Administrador Pleno (não pode mexer "para cima"
+      // do seu próprio nível — o banco também bloqueia isso, RLS da
+      // migração 001, mas evitamos mostrar uma ação que resultaria em erro).
+      let controlePapel = '';
+      if(currentAgente.ehAdminPleno){
+        controlePapel = `
+          <select class="select-compacto" data-papel-select="${a.id}" style="display:inline-block;margin:0 4px;">
+            <option value="tecnico" ${papelAtual==='tecnico'?'selected':''}>Técnico</option>
+            <option value="supervisor" ${papelAtual==='supervisor'?'selected':''}>Supervisor</option>
+            <option value="admin_pleno" ${papelAtual==='admin_pleno'?'selected':''}>Administrador Pleno</option>
+          </select>`;
+      }else if(papelAtual !== 'admin_pleno'){
+        controlePapel = `<button class="btn btn-ghost btn-sm" data-toggle-admin="${a.id}">${papelAtual==='supervisor'?'Remover supervisor':'Tornar supervisor'}</button>`;
+      }
+      return `
       <tr>
         <td style="font-weight:600;">${escapeHtml(a.nome)}</td>
         <td class="mono" style="font-size:12.5px;">${escapeHtml(a.email)}</td>
-        <td>${a.is_admin ? '<span class="badge badge-transferido">Supervisor</span>' : '<span class="badge badge-em_andamento">Agente</span>'}</td>
+        <td>${badgePapel(papelAtual)}</td>
         <td>${a.ativo ? '<span class="badge badge-encerrado">Ativo</span>' : '<span class="badge badge-aberto">Inativo</span>'}</td>
         <td style="text-align:right;white-space:nowrap;">
           <button class="btn btn-ghost btn-sm" data-edit-nome="${a.id}">Editar nome</button>
-          <button class="btn btn-ghost btn-sm" data-toggle-admin="${a.id}">${a.is_admin?'Remover supervisor':'Tornar supervisor'}</button>
+          ${controlePapel}
           <button class="btn btn-ghost btn-sm" data-toggle-ativo="${a.id}">${a.ativo?'Inativar':'Ativar'}</button>
         </td>
-      </tr>`).join('')}
+      </tr>`;
+    }).join('')}
     </tbody></table></div>`;
 
   wrap.querySelectorAll('[data-edit-nome]').forEach(btn=>{
@@ -3223,6 +3271,11 @@ async function renderAgentes(){
   wrap.querySelectorAll('[data-toggle-admin]').forEach(btn=>{
     const ag = data.find(x=>x.id===btn.dataset.toggleAdmin);
     btn.addEventListener('click', ()=> alternarAdminAgente(ag));
+  });
+  wrap.querySelectorAll('[data-papel-select]').forEach(sel=>{
+    const ag = data.find(x=>x.id===sel.dataset.papelSelect);
+    const valorOriginal = sel.value;
+    sel.addEventListener('change', ()=> alterarPapelAgente(ag, sel.value, sel, valorOriginal));
   });
   wrap.querySelectorAll('[data-toggle-ativo]').forEach(btn=>{
     const ag = data.find(x=>x.id===btn.dataset.toggleAtivo);
@@ -3281,6 +3334,60 @@ $('#btn-criar-agente')?.addEventListener('click', async ()=>{
   }
 });
 
+// Seletor de 3 níveis, exclusivo de quem já é Administrador Pleno (a tela
+// só mostra esse <select> para esse público — ver renderAgentes). Escreve
+// SEMPRE as duas colunas juntas (papel + is_admin), para o restante da
+// aplicação — que ainda checa só "is_admin" em várias telas (Clientes,
+// Equipamentos, Linhas etc.) — continuar funcionando sem nenhuma outra
+// alteração. A salvaguarda de "nunca zerar Administrador Pleno" já vem
+// do próprio banco (trigger da migração 001); aqui só exibimos o erro
+// dele de forma legível, caso a ação seja bloqueada.
+async function alterarPapelAgente(agente, novoPapel, selectEl, valorOriginal){
+  const souEuMesmo = agente.id === currentAgente.id;
+  const rotulos = { tecnico:'Técnico', supervisor:'Supervisor', admin_pleno:'Administrador Pleno' };
+
+  const mensagemConfirmacao = souEuMesmo
+    ? `Tem certeza que deseja mudar o SEU PRÓPRIO papel para ${rotulos[novoPapel]}? Isso pode remover seu próprio acesso a este menu imediatamente.`
+    : `Confirma mudar o papel de ${agente.nome} para ${rotulos[novoPapel]}?`;
+  if(!confirm(mensagemConfirmacao)){
+    if(selectEl) selectEl.value = valorOriginal;
+    return;
+  }
+
+  const { error } = await sb.from('agentes')
+    .update({ papel: novoPapel, is_admin: novoPapel === 'supervisor' || novoPapel === 'admin_pleno' })
+    .eq('id', agente.id);
+
+  if(error){
+    // é aqui que aparece a mensagem do trigger de "último administrador",
+    // se for o caso — repassada tal como o banco a formulou.
+    toast('Não foi possível alterar: '+error.message);
+    if(selectEl) selectEl.value = valorOriginal;
+    return;
+  }
+
+  toast('Papel atualizado para '+rotulos[novoPapel]+'.');
+
+  if(souEuMesmo && novoPapel !== 'admin_pleno' && novoPapel !== 'supervisor'){
+    currentAgente.is_admin = false;
+    currentAgente.ehAdminPleno = false;
+    currentAgente.papel = novoPapel;
+    $('#nav-group-supervisor').style.display = 'none';
+    $('#nav-supervisao').style.display = 'none';
+    $('#nav-agentes').style.display = 'none';
+    $('#nav-categorias').style.display = 'none';
+    $('#agent-role-badge').textContent = '';
+    switchView('dashboard');
+    return;
+  }
+  if(souEuMesmo){
+    currentAgente.papel = novoPapel;
+    currentAgente.ehAdminPleno = novoPapel === 'admin_pleno';
+    setText('#agent-role-badge', currentAgente.ehAdminPleno ? '· Administrador Pleno' : '· Supervisor');
+  }
+  renderAgentes();
+}
+
 async function alternarAdminAgente(agente){
   const souEuMesmo = agente.id === currentAgente.id;
 
@@ -3305,12 +3412,16 @@ async function alternarAdminAgente(agente){
     if(!confirm(`Confirma ${acao} ${agente.nome}?`)) return;
   }
 
-  const { error } = await sb.from('agentes').update({ is_admin: !agente.is_admin }).eq('id', agente.id);
+  const novoPapel = agente.is_admin ? 'tecnico' : 'supervisor';
+  const { error } = await sb.from('agentes')
+    .update({ is_admin: !agente.is_admin, papel: novoPapel })
+    .eq('id', agente.id);
   if(error){ toast('Erro: '+error.message); return; }
   toast('Papel atualizado.');
 
   if(souEuMesmo){
     currentAgente.is_admin = false;
+    currentAgente.papel = 'tecnico';
     $('#nav-group-supervisor').style.display = 'none';
     $('#nav-supervisao').style.display = 'none';
     $('#nav-agentes').style.display = 'none';
