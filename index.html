@@ -568,6 +568,8 @@
           <div class="field"><label>Cliente (grupo/razão social, opcional)</label><input id="f-cliente-grupo" placeholder="Ex: Rede Vida Nova Saúde Ltda"/></div>
           <div class="field"><label>WhatsApp do cliente (celular)</label>
             <div class="phone-group"><span class="phone-prefix">+55</span><input id="f-telefone" inputmode="numeric" placeholder="(21) 98888-7777"/></div>
+            <div id="f-telefone-sugestoes" style="display:none;margin-top:6px;font-size:11.5px;color:var(--text-muted);"></div>
+            <p class="hint" id="f-telefone-aviso" style="display:none;margin-top:6px;color:var(--warning);"></p>
           </div>
           <div class="field"><label>Equipamento</label><input id="f-equipamento" placeholder="Digite para buscar na base ou informe um novo…" autocomplete="off"/></div>
           <div class="field"><label>Número de série</label><input id="f-numero-serie" placeholder="Preenchido automaticamente ao selecionar do catálogo"/></div>
@@ -2047,6 +2049,7 @@ function selecionarDoCatalogo(equip){
   switchView('novo');
   $('#preview-text').textContent = montarMensagemInicial();
   toast('Dados do catálogo preenchidos no formulário.');
+  if(catalogoSelecionado.cliente_id) sugerirTelefonesDaUnidade(catalogoSelecionado.cliente_id);
 }
 
 // ---------------- IMPORTAÇÃO DE PLANILHA (Supervisor) ----------------
@@ -2289,7 +2292,65 @@ function selecionarClienteNoNovoForm(cliente){
   hint.textContent = `✓ Cliente selecionado do catálogo: ${cliente.nome}`;
   $('#preview-text').textContent = montarMensagemInicial();
   mostrarEquipamentosDoCliente(cliente.id, cliente.nome);
+  sugerirTelefonesDaUnidade(cliente.id);
 }
+
+// Mostra, como chips clicáveis, os números de WhatsApp já usados em
+// protocolos anteriores desta mesma unidade — evita depender só do que
+// está gravado no cadastro do cliente, e reduz o risco de digitar um
+// número novo errado quando já existe um confiável no histórico.
+async function sugerirTelefonesDaUnidade(clienteId){
+  const wrap = $('#f-telefone-sugestoes');
+  if(!wrap) return;
+  wrap.style.display = 'none';
+  wrap.innerHTML = '';
+
+  const { data, error } = await sb.from('atendimentos')
+    .select('cliente_telefone')
+    .eq('cliente_id', clienteId)
+    .not('cliente_telefone', 'is', null)
+    .order('criado_em', {ascending:false})
+    .limit(30);
+  if(error || !data || !data.length) return;
+
+  const vistos = new Set();
+  const numeros = [];
+  for(const row of data){
+    if(row.cliente_telefone && !vistos.has(row.cliente_telefone)){
+      vistos.add(row.cliente_telefone);
+      numeros.push(row.cliente_telefone);
+    }
+    if(numeros.length >= 4) break;
+  }
+  if(!numeros.length) return;
+
+  wrap.innerHTML = 'Números já usados nesta unidade: ' + numeros.map(n =>
+    `<button type="button" class="btn btn-ghost btn-sm" data-tel-sugestao="${n}" style="padding:2px 8px;font-size:11px;margin:2px 3px 0 0;">+${formatarCelularBR(n.replace(/^55/,''))}</button>`
+  ).join('');
+  wrap.style.display = 'block';
+  wrap.querySelectorAll('[data-tel-sugestao]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      $('#f-telefone').value = formatarCelularBR(btn.dataset.telSugestao.replace(/^55/,''));
+      validarTelefoneNovoForm();
+    });
+  });
+}
+
+// Validação leve de formato (DDI 55 + DDD + 8 ou 9 dígitos) — não impede
+// salvar (o número pode estar certo mesmo fugindo do padrão em casos raros),
+// só avisa antes de o protocolo ser criado, para não descobrir o problema
+// só na hora de enviar a primeira mensagem.
+function validarTelefoneNovoForm(){
+  const aviso = $('#f-telefone-aviso');
+  if(!aviso) return true;
+  const valor = comDDI55($('#f-telefone').value);
+  if(!$('#f-telefone').value.trim()){ aviso.style.display = 'none'; return true; }
+  const valido = /^55\d{10,11}$/.test(valor);
+  aviso.style.display = valido ? 'none' : 'block';
+  aviso.textContent = valido ? '' : '⚠ Esse número não parece completo (DDD + 8 ou 9 dígitos) — confira antes de salvar.';
+  return valido;
+}
+$('#f-telefone')?.addEventListener('blur', validarTelefoneNovoForm);
 
 let timerBuscaClienteNovo = null;
 async function garantirClientesCacheNovo(){
@@ -2394,6 +2455,8 @@ function limparFormularioNovoAtendimento(){
   $('#f-equipamento').value=''; $('#f-numero-serie').value=''; $('#f-descricao').value=''; $('#f-procedimento').value=''; $('#f-observacoes').value='';
   $('#preview-text').textContent = 'Preencha o formulário ao lado para ver a prévia…';
   $('#catalogo-selecionado-hint').style.display = 'none';
+  const sug = $('#f-telefone-sugestoes'); if(sug){ sug.style.display='none'; sug.innerHTML=''; }
+  const avisoTel = $('#f-telefone-aviso'); if(avisoTel){ avisoTel.style.display='none'; }
   esconderResultadosNovo();
   catalogoSelecionado = { cliente_id: null, equipamento_id: null };
   $('#novo-confirmacao').style.display = 'none';
@@ -3998,6 +4061,17 @@ async function abrirDetalhe(id){
 // de volta no link do WhatsApp — mesma interface para os dois casos, só
 // muda o que acontece por trás, exatamente como já fazíamos nos outros
 // pontos de envio da aplicação.
+// Traduz os erros mais comuns que a Meta devolve para uma linguagem que
+// faz sentido pra quem está atendendo, em vez do JSON cru da API.
+function traduzirErroWhatsApp(mensagemErro){
+  const msg = String(mensagemErro || '');
+  if(/131030/.test(msg)) return 'Este número ainda não está na lista de destinatários permitidos (conta em modo de teste) — adicione-o no painel da Meta antes de tentar de novo.';
+  if(/131026/.test(msg)) return 'A Meta não conseguiu entregar a mensagem — o número pode não ter WhatsApp ativo, ou estar incorreto. Confira o número cadastrado neste protocolo.';
+  if(/132000|template/i.test(msg)) return 'Esta conversa está fora da janela de 24h e precisaria de um modelo de mensagem aprovado (ainda não configurado).';
+  if(/\(#100\)|invalid.*param/i.test(msg)) return 'O número informado está num formato inválido para a Meta — confira o DDD e a quantidade de dígitos no cadastro deste protocolo.';
+  return msg;
+}
+
 async function enviarComposerConversa(atendimento){
   const textarea = $('#chat-composer-texto');
   const texto = textarea.value.trim();
@@ -4005,6 +4079,16 @@ async function enviarComposerConversa(atendimento){
 
   const modoNota = $('#chat-toggle-nota-input').checked;
   const usaApi = atendimento.canal === 'whatsapp_api' || linhaTemApiAtiva(atendimento.linha_id);
+
+  // se o número deste protocolo não bate com o formato esperado (DDI 55 +
+  // DDD + 8/9 dígitos), avisa antes de gastar uma tentativa de envio —
+  // pode ter sido digitado errado na criação do atendimento e nunca
+  // corrigido.
+  if(!modoNota && usaApi && !/^55\d{10,11}$/.test(String(atendimento.cliente_telefone||''))){
+    if(!confirm(`O número deste protocolo (+${atendimento.cliente_telefone}) não parece estar num formato válido (DDD + 8 ou 9 dígitos). Mesmo assim, tentar enviar?`)){
+      return;
+    }
+  }
 
   // precisa ser sincrono, ainda dentro deste clique — ver
   // abrirAbaWhatsAppSincrono — só se aplica ao caminho de fallback manual.
@@ -4039,7 +4123,7 @@ async function enviarComposerConversa(atendimento){
     atualizarListaAtivaEmSegundoPlano();
   }catch(err){
     console.error('[chat] erro ao enviar:', err);
-    toast('Erro: '+(err?.message || err));
+    toast('Erro ao enviar: '+traduzirErroWhatsApp(err?.message || err));
     if(winWhats && !winWhats.closed) winWhats.close();
   }finally{
     btn.disabled = false;
