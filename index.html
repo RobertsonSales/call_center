@@ -3932,6 +3932,10 @@ async function abrirDetalhe(id){
 
   if(!atendimento){ $('#modal-body').innerHTML = '<p class="hint">Atendimento não encontrado.</p>'; return; }
 
+  // sempre volta o rótulo padrão aqui — sem isso, um rótulo trocado por
+  // uma ação específica (Encerrar/Transferir/Reenviar) ficava "grudado"
+  // ao reabrir qualquer protocolo depois, mesmo já resolvido.
+  $('#modal-protocolo-label').textContent = 'Protocolo';
   $('#modal-protocolo').textContent = atendimento.protocolo;
 
   // status de entrega por interação, para os balões da Janela de Conversa
