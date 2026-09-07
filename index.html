@@ -637,7 +637,7 @@
           <div class="field"><label>Período de referência (opcional)</label><input id="vt-periodo" placeholder="Ex: Julho/2026"/></div>
           <div class="field"><label>Mensagem adicional (opcional)</label><textarea id="vt-mensagem" rows="2" placeholder="Ex: favor informar também eventuais equipamentos parados no período"></textarea></div>
           <div class="hint" id="vt-catalogo-hint" style="display:none;margin-bottom:10px;"></div>
-          <div style="display:flex;gap:8px;">
+          <div style="display:flex;gap:8px;" id="vt-form-botoes">
             <button class="btn btn-primary" style="flex:1;" id="btn-criar-volume">Gerar protocolo</button>
             <button class="btn btn-ghost" id="btn-cancelar-volume">Cancelar</button>
           </div>
@@ -1447,7 +1447,7 @@ function switchView(view){
   if(view==='catalogo') renderCatalogo();
   if(view==='categorias') renderCategorias();
   if(view==='novo'){ $('#novo-confirmacao').style.display='none'; $('#novo-form-preview').style.display='block'; $('#novo-form-botoes').style.display='flex'; }
-  if(view==='volume'){ $('#vt-confirmacao').style.display='none'; $('#volume-form-preview').style.display='block'; }
+  if(view==='volume'){ $('#vt-confirmacao').style.display='none'; $('#volume-form-preview').style.display='block'; $('#vt-form-botoes').style.display='flex'; }
 }
 
 // Atualiza a listagem que estiver visível por trás do modal (painel,
@@ -2845,6 +2845,7 @@ function limparFormularioVolume(){
   vtSelecionado = { cliente_id: null };
   $('#vt-confirmacao').style.display = 'none';
   $('#volume-form-preview').style.display = 'block';
+  $('#vt-form-botoes').style.display = 'flex';
   ultimoAtendimentoVolumeCriadoId = null;
 }
 
@@ -2931,6 +2932,11 @@ $('#btn-criar-volume').addEventListener('click', async ()=>{
 
     $('#volume-form-preview').style.display = 'none';
     $('#vt-confirmacao').style.display = 'block';
+    // depois de gerado o protocolo, "Gerar protocolo"/"Cancelar" perdem o
+    // sentido (reenviar o mesmo formulário criaria um protocolo
+    // duplicado) — reaparecem só ao iniciar uma nova solicitação, em
+    // limparFormularioVolume() ou ao reabrir esta view.
+    $('#vt-form-botoes').style.display = 'none';
     $('#vt-confirmacao-protocolo').textContent = data.protocolo;
     $('#vt-confirmacao-mensagem').textContent = mensagem;
     const link = $('#vt-confirmacao-link');
