@@ -2228,12 +2228,13 @@ function montarMensagemInicial(){
   const nome = $('#f-nome').value.trim();
   const grupo = $('#f-cliente-grupo').value.trim();
   const equipamento = $('#f-equipamento').value.trim();
+  const numeroSerie = $('#f-numero-serie').value.trim();
   const descricao = $('#f-descricao').value.trim();
   const procedimento = $('#f-procedimento').value.trim();
-  return `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: (gerado ao salvar)\n${nome? 'Unidade: '+nome+'\n':''}${grupo? 'Cliente: '+grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao? 'Problema relatado: '+descricao+'\n':''}${procedimento? 'Procedimento sugerido: '+procedimento+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
+  return `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: (gerado ao salvar)\n${nome? 'Unidade: '+nome+'\n':''}${grupo? 'Cliente: '+grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${numeroSerie? 'Número de série: '+numeroSerie+'\n':''}${descricao? 'Problema relatado: '+descricao+'\n':''}${procedimento? 'Procedimento sugerido: '+procedimento+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
 }
 
-['f-nome','f-cliente-grupo','f-equipamento','f-descricao','f-procedimento'].forEach(id=>{
+['f-nome','f-cliente-grupo','f-equipamento','f-numero-serie','f-descricao','f-procedimento'].forEach(id=>{
   $('#'+id).addEventListener('input', ()=>{ $('#preview-text').textContent = montarMensagemInicial(); });
 });
 
@@ -2542,6 +2543,7 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
   const cliente_grupo = $('#f-cliente-grupo').value.trim();
   const cliente_telefone = comDDI55($('#f-telefone').value);
   const equipamento = $('#f-equipamento').value.trim();
+  const numero_serie = $('#f-numero-serie').value.trim();
   const descricao_problema = $('#f-descricao').value.trim();
   const procedimento_sugerido = $('#f-procedimento').value.trim();
   const observacoes_cliente = $('#f-observacoes').value.trim();
@@ -2562,7 +2564,7 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
 
     if(error){ toast('Erro ao criar atendimento: '+error.message); if(winWhats && !winWhats.closed) winWhats.close(); return; }
 
-    const mensagem = `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${cliente_nome? 'Unidade: '+cliente_nome+'\n':''}${cliente_grupo? 'Cliente: '+cliente_grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}${procedimento_sugerido? 'Procedimento sugerido: '+procedimento_sugerido+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
+    const mensagem = `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${cliente_nome? 'Unidade: '+cliente_nome+'\n':''}${cliente_grupo? 'Cliente: '+cliente_grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${numero_serie? 'Número de série: '+numero_serie+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}${procedimento_sugerido? 'Procedimento sugerido: '+procedimento_sugerido+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
 
     let envioApiFalhou = false;
     if(usaApi){
