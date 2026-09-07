@@ -302,6 +302,9 @@
 
   /* stat cards */
   .stat-card{padding:18px 20px;}
+  .stat-card-clicavel{cursor:pointer;transition:border-color .15s,transform .1s;}
+  .stat-card-clicavel:hover{border-color:var(--primary);}
+  .stat-card-clicavel:active{transform:scale(0.98);}
   .stat-num{font-size:26px;font-weight:800;font-family:'Sora',sans-serif;}
   .stat-label{font-size:12px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em;}
 
@@ -545,9 +548,9 @@
         </div>
       </div>
       <div class="grid-3" style="margin-bottom:22px;">
-        <div class="card stat-card"><div class="stat-num" id="stat-abertos">–</div><div class="stat-label">Em aberto</div></div>
-        <div class="card stat-card"><div class="stat-num" id="stat-andamento">–</div><div class="stat-label">Em andamento</div></div>
-        <div class="card stat-card"><div class="stat-num" id="stat-hoje">–</div><div class="stat-label">Protocolos hoje</div></div>
+        <div class="card stat-card stat-card-clicavel" id="stat-card-abertos"><div class="stat-num" id="stat-abertos">–</div><div class="stat-label">Em aberto</div></div>
+        <div class="card stat-card stat-card-clicavel" id="stat-card-andamento"><div class="stat-num" id="stat-andamento">–</div><div class="stat-label">Em andamento</div></div>
+        <div class="card stat-card stat-card-clicavel" id="stat-card-hoje"><div class="stat-num" id="stat-hoje">–</div><div class="stat-label">Protocolos hoje</div></div>
       </div>
       <div class="card card-pad">
         <p class="section-title">Últimos protocolos</p>
@@ -3729,6 +3732,40 @@ $('#btn-limpar-historico').addEventListener('click', ()=>{
   $('#fh-linha').value=''; $('#fh-status').value='';
   renderHistorico();
 });
+
+// Linha, Status e Protocolo filtram sozinhos, sem precisar clicar em
+// "Filtrar" — só as datas (De/Até) continuam exigindo o clique, já que
+// normalmente faz sentido escolher as duas antes de buscar.
+$('#fh-linha')?.addEventListener('change', ()=> renderHistorico());
+$('#fh-status')?.addEventListener('change', ()=> renderHistorico());
+let timerFiltroProtocoloHistorico = null;
+$('#fh-protocolo')?.addEventListener('input', ()=>{
+  clearTimeout(timerFiltroProtocoloHistorico);
+  timerFiltroProtocoloHistorico = setTimeout(()=> renderHistorico(), 350);
+});
+
+// Os cards de métricas do Painel levam direto para o Histórico já
+// filtrado — os campos são preenchidos ANTES de trocar de tela, porque
+// switchView('historico') já dispara sua própria chamada a
+// renderHistorico() sozinha; preencher depois causaria uma corrida entre
+// as duas chamadas.
+function irParaHistoricoComFiltro({status, hoje}={}){
+  $('#fh-status').value = status || '';
+  $('#fh-protocolo').value = '';
+  $('#fh-linha').value = '';
+  if(hoje){
+    const hojeStr = new Date().toISOString().slice(0,10);
+    $('#fh-de').value = hojeStr;
+    $('#fh-ate').value = hojeStr;
+  }else{
+    $('#fh-de').value = '';
+    $('#fh-ate').value = '';
+  }
+  switchView('historico');
+}
+$('#stat-card-abertos')?.addEventListener('click', ()=> irParaHistoricoComFiltro({status:'aberto'}));
+$('#stat-card-andamento')?.addEventListener('click', ()=> irParaHistoricoComFiltro({status:'em_andamento'}));
+$('#stat-card-hoje')?.addEventListener('click', ()=> irParaHistoricoComFiltro({hoje:true}));
 
 async function renderHistorico(resetPagina = true){
   const wrap = $('#historico-table-wrap');
