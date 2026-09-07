@@ -3365,6 +3365,20 @@ $('#btn-limpar-supervisao')?.addEventListener('click', ()=>{
   renderSupervisao();
 });
 
+// Agente, Linha e Status filtram sozinhos, sem precisar clicar em
+// "Filtrar" — igual ao que já existe no Histórico & Auditoria. Protocolo
+// funciona como busca inteligente: filtra à medida que se digita, com uma
+// pequena pausa para não disparar uma consulta a cada letra. Só as datas
+// (De/Até) continuam exigindo o clique.
+$('#fs-agente')?.addEventListener('change', ()=> renderSupervisao());
+$('#fs-linha')?.addEventListener('change', ()=> renderSupervisao());
+$('#fs-status')?.addEventListener('change', ()=> renderSupervisao());
+let timerFiltroProtocoloSupervisao = null;
+$('#fs-protocolo')?.addEventListener('input', ()=>{
+  clearTimeout(timerFiltroProtocoloSupervisao);
+  timerFiltroProtocoloSupervisao = setTimeout(()=> renderSupervisao(), 350);
+});
+
 async function renderSupervisao(resetPagina = true){
   const wrap = $('#supervisao-table-wrap');
   const wrapMais = $('#supervisao-carregar-mais-wrap');
