@@ -340,7 +340,7 @@
   .badge-contador{display:inline-block;margin-left:8px;background:var(--danger);color:#fff;border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;}
   tr.linha-mensagem-nova{position:relative;}
   tr.linha-mensagem-nova td:first-child{box-shadow:inset 3px 0 0 var(--primary);}
-  tr.linha-mensagem-nova .ponto-novo{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--primary);margin-right:6px;vertical-align:middle;}
+  tr.linha-mensagem-nova .badge-mensagem-nova{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--primary);color:#fff;font-size:10.5px;font-weight:700;margin-right:6px;vertical-align:middle;}
   .badge-aberto{background:var(--info-light);color:var(--info);}
   .badge-em_andamento{background:var(--warning-light);color:var(--warning);}
   .badge-transferido{background:#F0E9FB;color:#6A3FBF;}
@@ -1002,7 +1002,7 @@ let supabaseUrlGlobal = null;
 let currentAgente = null;
 let linhasCache = [];
 let linhasComApiCache = new Set(); // ids de linhas com número já conectado à API do WhatsApp (whatsapp_numeros.ativo)
-let atendimentosComMensagemNova = new Set(); // ids de atendimentos com mensagem recebida ainda não vista (ver Realtime)
+let atendimentosComMensagemNova = new Map(); // atendimento_id -> quantidade de mensagens novas ainda não vistas (ver Realtime)
 let agentesCache = [];
 let historicoDataAtual = [];
 let supervisaoDataAtual = [];
@@ -1568,7 +1568,7 @@ function iniciarRealtimeWhatsApp(){
         // histórico na hora, sem precisar de nenhuma ação manual.
         abrirDetalhe(atendimentoId);
       }else{
-        atendimentosComMensagemNova.add(atendimentoId);
+        atendimentosComMensagemNova.set(atendimentoId, (atendimentosComMensagemNova.get(atendimentoId) || 0) + 1);
       }
       atualizarListaAtivaEmSegundoPlano();
       atualizarBadgeGlobalAtendimentos();
@@ -3020,15 +3020,17 @@ function atualizarBadgeAtendimentosAtivos(qtdNaoAssumidos){
 }
 
 // Marca visualmente, na tabela já renderizada, as linhas cujo protocolo
-// recebeu uma mensagem nova desde a última vez que o técnico abriu o
-// detalhe (conjunto atendimentosComMensagemNova, alimentado pelo Realtime).
+// recebeu mensagem nova desde a última vez que o técnico abriu o detalhe
+// (mapa atendimentosComMensagemNova, alimentado pelo Realtime) — mostra a
+// quantidade real de mensagens novas, não só um indicador genérico.
 function aplicarDestaquesDeMensagemNova(wrap){
   wrap.querySelectorAll('tr[data-id]').forEach(tr=>{
-    if(!atendimentosComMensagemNova.has(tr.dataset.id)) return;
+    const qtd = atendimentosComMensagemNova.get(tr.dataset.id);
+    if(!qtd) return;
     tr.classList.add('linha-mensagem-nova');
     const primeiraCelula = tr.querySelector('td');
-    if(primeiraCelula && !primeiraCelula.querySelector('.ponto-novo')){
-      primeiraCelula.insertAdjacentHTML('afterbegin', '<span class="ponto-novo" title="Mensagem nova"></span>');
+    if(primeiraCelula && !primeiraCelula.querySelector('.badge-mensagem-nova')){
+      primeiraCelula.insertAdjacentHTML('afterbegin', `<span class="badge-mensagem-nova" title="${qtd} mensagem${qtd>1?'s':''} nova${qtd>1?'s':''}">${qtd}</span>`);
     }
   });
 }
