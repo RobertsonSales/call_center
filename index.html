@@ -916,6 +916,23 @@
   </div>
 </div>
 
+<!-- ================= MODAL: AVISO QUE EXIGE AÇÃO ================= -->
+<!-- Reservado para erros que o técnico precisa resolver fora da aplicação
+     (ex.: número fora da lista de teste da Meta) — diferente do toast comum,
+     fica na tela até ser fechado, para não passar despercebido. -->
+<div class="overlay" id="aviso-modal-overlay">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-head">
+      <div style="font-size:11px;color:var(--warning);font-weight:700;text-transform:uppercase;letter-spacing:.05em;">⚠ Atenção necessária</div>
+      <button class="modal-close" id="aviso-modal-close">✕</button>
+    </div>
+    <div class="modal-body" style="padding-top:4px;">
+      <p id="aviso-modal-texto" style="font-size:14px;line-height:1.6;color:var(--text);margin:0 0 16px;"></p>
+      <button class="btn btn-primary btn-block" id="aviso-modal-ok">Entendi</button>
+    </div>
+  </div>
+</div>
+
 <!-- ================= MODAL: BUSCA DE CLIENTES/EQUIPAMENTOS ================= -->
 <div class="overlay" id="modal-busca-overlay">
   <div class="modal" style="max-width:720px;">
@@ -1068,6 +1085,16 @@ function toast(msg){
   t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'), 2600);
 }
+
+// Para avisos que exigem uma ação do técnico fora da aplicação (ex.: ir
+// cadastrar um número no painel da Meta) — diferente do toast, que some
+// sozinho em segundos, este fica na tela até ser fechado de propósito.
+function mostrarAvisoModal(texto){
+  $('#aviso-modal-texto').textContent = texto;
+  $('#aviso-modal-overlay').classList.add('active');
+}
+$('#aviso-modal-close')?.addEventListener('click', ()=> $('#aviso-modal-overlay').classList.remove('active'));
+$('#aviso-modal-ok')?.addEventListener('click', ()=> $('#aviso-modal-overlay').classList.remove('active'));
 
 // versão segura de "setar texto": não quebra a aplicação se, por algum
 // motivo (versão desatualizada do HTML publicado, etc.), o elemento
@@ -4171,7 +4198,7 @@ async function enviarComposerConversa(atendimento){
     atualizarListaAtivaEmSegundoPlano();
   }catch(err){
     console.error('[chat] erro ao enviar:', err);
-    toast('Erro ao enviar: '+traduzirErroWhatsApp(err?.message || err));
+    mostrarAvisoModal('Não foi possível enviar a mensagem: '+traduzirErroWhatsApp(err?.message || err));
     if(winWhats && !winWhats.closed) winWhats.close();
   }finally{
     btn.disabled = false;
