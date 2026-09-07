@@ -1367,6 +1367,7 @@ async function afterLogin(session){
     try{ await carregarLinhas(); }catch(e){ console.error('[login] erro ao carregar linhas:', e); }
     try{ iniciarRealtimeWhatsApp(); }catch(e){ console.error('[login] erro ao iniciar Realtime do WhatsApp:', e); }
     try{ await atualizarBadgeGlobalAtendimentos(); }catch(e){ console.error('[login] erro ao calcular contador de atendimentos:', e); }
+    try{ await carregarAgentesCache(); }catch(e){ console.error('[login] erro ao carregar lista de agentes:', e); }
     try{ await renderDashboard(); }catch(e){ console.error('[login] erro ao renderizar painel:', e); }
 
   }catch(err){
@@ -3312,6 +3313,17 @@ $$('#metricas-tabs .dim-tab').forEach(btn=>{
 });
 
 // ---------------- SUPERVISÃO (somente admin) ----------------
+// Carrega a lista de agentes uma vez, no login, para qualquer papel (a
+// leitura de "agentes" já é liberada para todo autenticado) — sem isso,
+// só quem visitasse as telas de Agentes/Supervisão (exclusivas de
+// admin) tinha essa lista disponível, deixando o seletor de "Transferir"
+// sempre vazio para um técnico comum.
+async function carregarAgentesCache(){
+  const { data, error } = await sb.from('agentes').select('id, nome, email, ativo, telefone_whatsapp').order('nome');
+  if(error){ console.error('[agentes] erro ao carregar cache:', error); return; }
+  agentesCache = data || [];
+}
+
 async function carregarAgentesParaFiltro(){
   const { data } = await sb.from('agentes').select('id, nome, email').order('nome');
   agentesCache = data || [];
@@ -4373,8 +4385,25 @@ function mostrarFormularioEnvio(atendimento, interacoes, modo){
   $('#modal-overlay').classList.add('active');
   $('#modal-protocolo-label').textContent = ehTransferencia ? 'Transferir atendimento' : 'Reenviar histórico';
   $('#modal-protocolo').textContent = atendimento.protocolo;
+
+  // Só faz sentido para Transferir: lista de técnicos já cadastrados,
+  // para poder trocar o RESPONSÁVEL de verdade (agente_id), não só avisar
+  // por mensagem. Escolher "destinatário externo" mantém o comportamento
+  // de antes (só notifica, sem mudar quem é o dono do atendimento).
+  const seletorTecnico = ehTransferencia ? `
+    <div class="field">
+      <label>Transferir para um técnico já cadastrado (opcional)</label>
+      <select id="dest-agente-select">
+        <option value="">— Destinatário externo (não muda o responsável) —</option>
+        ${agentesCache.filter(a=>a.ativo && a.id!==atendimento.agente_id).map(a=>`<option value="${a.id}">${a.nome}</option>`).join('')}
+      </select>
+      <p class="hint" style="margin-top:6px;">Escolher um técnico daqui também transfere a titularidade do atendimento para ele — ele passa a aparecer como responsável assim que fizer login.</p>
+    </div>
+  ` : '';
+
   $('#modal-body').innerHTML = `
     <p class="section-sub" style="margin:14px 0 16px;">${ehTransferencia ? 'Informe para quem este atendimento vai ser transferido.' : 'Informe para quem o histórico deste protocolo será reenviado.'}</p>
+    ${seletorTecnico}
     <div class="field"><label>Nome do destinatário</label><input id="dest-nome" placeholder="Ex: Dr. João Pereira"/></div>
     <div class="field"><label>WhatsApp do destinatário</label>
       <div class="phone-group"><span class="phone-prefix">+55</span><input id="dest-telefone" inputmode="numeric" placeholder="(21) 98888-7777"/></div>
@@ -4395,6 +4424,19 @@ function mostrarFormularioEnvio(atendimento, interacoes, modo){
     </div>
   `;
   aplicarMascaraCelular($('#dest-telefone'));
+
+  // ao escolher um técnico da lista, preenche nome/telefone dele
+  // automaticamente (usa o telefone_whatsapp cadastrado no perfil, se
+  // houver) — pode ser corrigido manualmente antes de confirmar.
+  $('#dest-agente-select')?.addEventListener('change', (e)=>{
+    const agenteId = e.target.value;
+    const agente = agentesCache.find(a=>a.id===agenteId);
+    if(agente){
+      $('#dest-nome').value = agente.nome;
+      $('#dest-telefone').value = agente.telefone_whatsapp ? formatarCelularBR(agente.telefone_whatsapp.replace(/^55/,'')) : '';
+    }
+  });
+
   $('#btn-cancelar-envio').addEventListener('click', ()=> abrirDetalhe(atendimento.id));
   $('#btn-confirmar-envio').addEventListener('click', ()=> confirmarEnvio(atendimento, interacoes, modo));
 }
@@ -4405,6 +4447,7 @@ async function confirmarEnvio(atendimento, interacoes, modo){
   // da Janela de Conversa. Só cai no link do WhatsApp (winWhats) quando a
   // linha ainda não migrou.
   const ehTransferencia = modo === 'transferir';
+  const agenteEscolhidoId = ehTransferencia ? ($('#dest-agente-select')?.value || null) : null;
   const nome = $('#dest-nome').value.trim();
   const telefone = comDDI55($('#dest-telefone').value);
   const arquivo = $('#dest-arquivo').files[0];
@@ -4437,7 +4480,16 @@ async function confirmarEnvio(atendimento, interacoes, modo){
     const resumo = montarResumoHistorico(atendimento, interacoes, { destinatarioNome: nome, destinatarioTelefone: telefone, anexoUrl, redirecionamentoPresencial: presencial });
 
     if(ehTransferencia){
-      await sb.from('atendimentos').update({status:'transferido'}).eq('id', atendimento.id);
+      // Escolheu um técnico já cadastrado: a titularidade muda de
+      // verdade (agente_id) e o atendimento volta a ficar "em_andamento"
+      // — ele já pode continuar registrando interações assim que logar.
+      // Sem escolha (destinatário externo): mantém o comportamento de
+      // antes, só um aviso, sem trocar quem é o responsável.
+      if(agenteEscolhidoId){
+        await sb.from('atendimentos').update({status:'em_andamento', agente_id: agenteEscolhidoId}).eq('id', atendimento.id);
+      }else{
+        await sb.from('atendimentos').update({status:'transferido'}).eq('id', atendimento.id);
+      }
     }
 
     if(usaApi){
@@ -4457,7 +4509,7 @@ async function confirmarEnvio(atendimento, interacoes, modo){
         destinatario_telefone: telefone, destinatario_nome: nome || null,
         anexo_url: anexoUrl, anexo_nome: anexoNome
       });
-      toast(ehTransferencia ? 'Transferência registrada e enviada.' : 'Histórico reenviado.');
+      toast(agenteEscolhidoId ? 'Atendimento transferido — agora é responsabilidade de '+nome+'.' : (ehTransferencia ? 'Transferência registrada e enviada.' : 'Histórico reenviado.'));
       abrirDetalhe(atendimento.id);
       atualizarListaAtivaEmSegundoPlano();
     }else{
