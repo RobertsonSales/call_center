@@ -212,7 +212,7 @@
   .autocomplete-empty{padding:9px 12px;font-size:13px;color:var(--text-muted);}
 
   .theme-toggle{
-    position:fixed;top:16px;right:16px;z-index:60;width:38px;height:38px;border-radius:50%;
+    position:fixed;top:7px;right:16px;z-index:60;width:38px;height:38px;border-radius:50%;
     border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:16px;
     display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);
   }
@@ -228,7 +228,7 @@
   }
   .masthead-id{display:flex;align-items:center;gap:12px;min-width:0;}
   .masthead-id .dot{width:8px;height:8px;border-radius:50%;background:var(--whatsapp);flex-shrink:0;}
-  .masthead-id .nome{color:#fff;font-weight:700;font-size:15px;letter-spacing:-.01em;white-space:nowrap;}
+  .masthead-id .nome{color:#fff;font-weight:800;font-size:19px;letter-spacing:-.01em;white-space:nowrap;}
   .masthead-id .divisor{width:1px;height:16px;background:rgba(255,255,255,.18);flex-shrink:0;}
   .masthead-id .proposito{color:#9AAEC2;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .masthead-versao{color:#5C7085;font-size:11px;white-space:nowrap;flex-shrink:0;}
@@ -526,7 +526,7 @@
     <span class="dot"></span>
     <span class="nome">Grupo Labmedic</span>
     <span class="divisor"></span>
-    <span class="proposito">Atendimento técnico de equipamentos laboratoriais via WhatsApp</span>
+    <span class="proposito">Call Center - Manutenção remota de equipamentos laboratoriais</span>
   </div>
 </header>
 <div class="shell">
@@ -576,7 +576,17 @@
         <div class="card stat-card stat-card-clicavel" id="stat-card-andamento"><div class="stat-num" id="stat-andamento">–</div><div class="stat-label">Em andamento</div></div>
         <div class="card stat-card stat-card-clicavel" id="stat-card-hoje"><div class="stat-num" id="stat-hoje">–</div><div class="stat-label">Protocolos hoje</div></div>
       </div>
-      <div class="card card-pad">
+      <div class="card card-pad" id="dashboard-filtro-card" style="display:none;margin-bottom:22px;border-color:var(--primary);">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+          <div>
+            <p class="section-title" id="dashboard-filtro-titulo" style="margin-bottom:2px;">Resultado do filtro</p>
+            <p class="section-sub" id="dashboard-filtro-sub" style="margin:0;"></p>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="btn-dashboard-filtro-limpar">✕ Limpar filtro</button>
+        </div>
+        <div id="dashboard-filtro-wrap" style="margin-top:14px;"></div>
+      </div>
+      <div class="card card-pad" id="dashboard-ultimos-card">
         <p class="section-title">Últimos protocolos</p>
         <p class="section-sub">Os 8 atendimentos mais recentes sob sua responsabilidade.</p>
         <div id="dashboard-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
@@ -3011,6 +3021,12 @@ $('#btn-ir-protocolo-volume').addEventListener('click', ()=>{
 
 // ---------------- DASHBOARD ----------------
 async function renderDashboard(){
+  // sempre reabre "limpo": sem isso, voltar ao Painel depois de ter usado
+  // um dos cards totalizadores poderia deixar o filtro anterior visível
+  // por engano, escondendo "Últimos protocolos" sem essa ter sido a
+  // intenção de quem só queria ver o Painel normal de novo.
+  limparFiltroDashboard();
+
   const hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
 
   const [{count:cAberto}, {count:cAndamento}, {count:cHoje}, {data:recentes}] = await Promise.all([
@@ -3846,28 +3862,50 @@ $('#fh-protocolo')?.addEventListener('input', ()=>{
   timerFiltroProtocoloHistorico = setTimeout(()=> renderHistorico(), 350);
 });
 
-// Os cards de métricas do Painel levam direto para o Histórico já
-// filtrado — os campos são preenchidos ANTES de trocar de tela, porque
-// switchView('historico') já dispara sua própria chamada a
-// renderHistorico() sozinha; preencher depois causaria uma corrida entre
-// as duas chamadas.
-function irParaHistoricoComFiltro({status, hoje}={}){
-  $('#fh-status').value = status || '';
-  $('#fh-protocolo').value = '';
-  $('#fh-linha').value = '';
+// Os cards de métricas do Painel mostram o resultado ali mesmo, sem
+// trocar de tela — "Painel" continua destacado no menu, e "Últimos
+// protocolos" cede lugar ao resultado do filtro até ele ser limpo.
+async function aplicarFiltroDashboard({status, hoje, titulo, sub}){
+  $('#dashboard-ultimos-card').style.display = 'none';
+  const card = $('#dashboard-filtro-card');
+  const wrap = $('#dashboard-filtro-wrap');
+  card.style.display = 'block';
+  $('#dashboard-filtro-titulo').textContent = titulo;
+  $('#dashboard-filtro-sub').textContent = sub;
+  wrap.innerHTML = '<div class="loading-row"><div class="spinner"></div>Carregando…</div>';
+
+  let q = sb.from('atendimentos').select('*, linhas(nome), agentes(nome)').order('criado_em', {ascending:false}).limit(100);
+  if(status) q = q.eq('status', status);
   if(hoje){
-    const hojeStr = new Date().toISOString().slice(0,10);
-    $('#fh-de').value = hojeStr;
-    $('#fh-ate').value = hojeStr;
-  }else{
-    $('#fh-de').value = '';
-    $('#fh-ate').value = '';
+    const hojeInicio = new Date(); hojeInicio.setHours(0,0,0,0);
+    q = q.gte('criado_em', hojeInicio.toISOString());
   }
-  switchView('historico');
+
+  const { data, error } = await q;
+  if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar.</p>'; return; }
+  if(!data || !data.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>Nenhum resultado no momento.</div>`; return; }
+  wrap.innerHTML = tabelaAtendimentos(data, {mostrarAgente:true});
+  bindRowClicks(wrap);
+  aplicarDestaquesDeMensagemNova(wrap);
 }
-$('#stat-card-abertos')?.addEventListener('click', ()=> irParaHistoricoComFiltro({status:'aberto'}));
-$('#stat-card-andamento')?.addEventListener('click', ()=> irParaHistoricoComFiltro({status:'em_andamento'}));
-$('#stat-card-hoje')?.addEventListener('click', ()=> irParaHistoricoComFiltro({hoje:true}));
+
+function limparFiltroDashboard(){
+  const card = $('#dashboard-filtro-card');
+  if(card) card.style.display = 'none';
+  const ultimos = $('#dashboard-ultimos-card');
+  if(ultimos) ultimos.style.display = 'block';
+}
+
+$('#btn-dashboard-filtro-limpar')?.addEventListener('click', limparFiltroDashboard);
+$('#stat-card-abertos')?.addEventListener('click', ()=> aplicarFiltroDashboard({
+  status:'aberto', titulo:'Em aberto', sub:'Atendimentos com status "aberto", de todos os técnicos.'
+}));
+$('#stat-card-andamento')?.addEventListener('click', ()=> aplicarFiltroDashboard({
+  status:'em_andamento', titulo:'Em andamento', sub:'Atendimentos com status "em andamento", de todos os técnicos.'
+}));
+$('#stat-card-hoje')?.addEventListener('click', ()=> aplicarFiltroDashboard({
+  hoje:true, titulo:'Protocolos de hoje', sub:'Todos os protocolos criados hoje, de todos os técnicos.'
+}));
 
 async function renderHistorico(resetPagina = true){
   const wrap = $('#historico-table-wrap');
