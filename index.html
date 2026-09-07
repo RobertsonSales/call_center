@@ -817,11 +817,11 @@
         <div class="grid-2" style="margin-bottom:16px;">
           <div class="chart-box">
             <p class="chart-title">Volume de atendimentos (top 8)</p>
-            <div class="chart-canvas-wrap"><canvas id="chart-metricas-volume"></canvas></div>
+            <div class="chart-canvas-wrap" id="chart-metricas-volume-wrap"><canvas id="chart-metricas-volume"></canvas></div>
           </div>
           <div class="chart-box">
             <p class="chart-title">Tempo médio de atendimento — encerrados (top 8)</p>
-            <div class="chart-canvas-wrap"><canvas id="chart-metricas-duracao"></canvas></div>
+            <div class="chart-canvas-wrap" id="chart-metricas-duracao-wrap"><canvas id="chart-metricas-duracao"></canvas></div>
           </div>
         </div>
         <div class="chart-box">
@@ -3265,8 +3265,12 @@ function atualizarPainelMetricas(){
 }
 
 function renderGraficoVolume(top){
-  const canvas = $('#chart-metricas-volume');
-  const wrap = canvas.closest('.chart-canvas-wrap');
+  // o wrap é localizado pelo próprio id, não mais a partir do <canvas>
+  // (canvas.closest(...)) — quando um filtro sem resultado apagava o
+  // <canvas> (substituído pela mensagem "Sem dados"), a tentativa
+  // seguinte de recriar o gráfico quebrava silenciosamente, porque não
+  // havia mais nenhum <canvas> para localizar o wrap a partir dele.
+  const wrap = $('#chart-metricas-volume-wrap');
   if(chartMetricasVolume){ chartMetricasVolume.destroy(); chartMetricasVolume = null; }
   if(!top.length){
     wrap.innerHTML = '<div class="chart-empty">Sem dados para os filtros aplicados.</div>';
@@ -3289,8 +3293,7 @@ function renderGraficoVolume(top){
 }
 
 function renderGraficoDuracao(top){
-  const canvas = $('#chart-metricas-duracao');
-  const wrap = canvas.closest('.chart-canvas-wrap');
+  const wrap = $('#chart-metricas-duracao-wrap');
   if(chartMetricasDuracao){ chartMetricasDuracao.destroy(); chartMetricasDuracao = null; }
   if(!top.length){
     wrap.innerHTML = '<div class="chart-empty">Nenhum atendimento encerrado nos filtros aplicados.</div>';
