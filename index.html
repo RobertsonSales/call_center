@@ -671,12 +671,14 @@
            ainda não têm um técnico responsável — ver "Fluxo de Conversas
            Simultâneas", capítulo 4. Só aparece quando há algo para mostrar. -->
       <div class="card card-pad" id="caixa-entrada-card" style="display:none;margin-bottom:16px;border-color:var(--primary);">
-        <p class="section-title" style="margin-bottom:4px;">📥 Caixa de entrada — não assumidos</p>
+        <p class="section-title" style="margin-bottom:4px;">📥 Não assumidos <span id="caixa-entrada-contador" class="badge badge-aberto" style="margin-left:6px;"></span></p>
         <p class="section-sub" style="margin-bottom:12px;">Solicitações recebidas pelo WhatsApp que ainda não têm um técnico responsável. Qualquer um pode assumir.</p>
         <div id="caixa-entrada-wrap"></div>
       </div>
 
       <div class="card card-pad">
+        <p class="section-title" style="margin-bottom:4px;">🛠 Em andamento <span id="atendimentos-em-andamento-contador" class="badge badge-em_andamento" style="margin-left:6px;"></span></p>
+        <p class="section-sub" style="margin-bottom:12px;">Chamados já assumidos por um técnico, em aberto ou em atendimento.</p>
         <div id="atendimentos-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
       </div>
     </section>
@@ -1334,6 +1336,7 @@ async function afterLogin(session){
     try{ await carregarLinhasComApi(); }catch(e){ console.error('[login] erro ao carregar linhas com API do WhatsApp:', e); }
     try{ await carregarLinhas(); }catch(e){ console.error('[login] erro ao carregar linhas:', e); }
     try{ iniciarRealtimeWhatsApp(); }catch(e){ console.error('[login] erro ao iniciar Realtime do WhatsApp:', e); }
+    try{ await atualizarBadgeGlobalAtendimentos(); }catch(e){ console.error('[login] erro ao calcular contador de atendimentos:', e); }
     try{ await renderDashboard(); }catch(e){ console.error('[login] erro ao renderizar painel:', e); }
 
   }catch(err){
@@ -1496,6 +1499,19 @@ async function enviarViaWhatsAppApi({ atendimentoId, telefone, texto, agenteId }
 // pela API do WhatsApp — sem precisar recarregar a página (ver Fluxo de
 // Conversas Simultâneas, capítulo 3.1 e 3.2). Chamada uma única vez, logo
 // após o login.
+// Contador do menu lateral: soma "não assumidos" (globais, qualquer
+// técnico pode assumir) + protocolos com mensagem nova ainda não vistos —
+// atualizado no login e a cada evento em tempo real, para aparecer mesmo
+// antes de a pessoa abrir a tela "Atendimentos Ativos" pela primeira vez.
+async function atualizarBadgeGlobalAtendimentos(){
+  const { count, error } = await sb.from('atendimentos')
+    .select('id', { count:'exact', head:true })
+    .is('agente_id', null)
+    .in('status', ['aberto','em_andamento']);
+  if(error){ console.error('[badge] erro ao contar não assumidos:', error); return; }
+  atualizarBadgeAtendimentosAtivos(count || 0);
+}
+
 function iniciarRealtimeWhatsApp(){
   if(!sb) return;
   sb.channel('whatsapp-realtime')
@@ -1505,7 +1521,14 @@ function iniciarRealtimeWhatsApp(){
       if(payload.new?.canal === 'whatsapp_api' && !payload.new?.agente_id){
         toast('Nova solicitação recebida pelo WhatsApp — protocolo '+payload.new.protocolo);
         atualizarListaAtivaEmSegundoPlano();
+        atualizarBadgeGlobalAtendimentos();
       }
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'atendimentos' }, (payload) => {
+      // alguém assumiu (ou um protocolo mudou de status) — o contador
+      // global de "não assumidos" pode ter mudado, mesmo sem estar na
+      // tela de Atendimentos Ativos no momento.
+      atualizarBadgeGlobalAtendimentos();
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'interacoes', filter: 'tipo=eq.mensagem_recebida' }, (payload) => {
       const atendimentoId = payload.new?.atendimento_id;
@@ -1518,6 +1541,7 @@ function iniciarRealtimeWhatsApp(){
         atendimentosComMensagemNova.add(atendimentoId);
       }
       atualizarListaAtivaEmSegundoPlano();
+      atualizarBadgeGlobalAtendimentos();
     })
     .subscribe();
 }
@@ -2944,6 +2968,8 @@ async function renderAtendimentosAtivos(){
 
   renderCaixaDeEntrada(naoAssumidos);
   atualizarBadgeAtendimentosAtivos(naoAssumidos.length);
+  const contadorAndamento = $('#atendimentos-em-andamento-contador');
+  if(contadorAndamento) contadorAndamento.textContent = String(demais.length);
 
   if(!demais.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">✅</div>Nenhum atendimento ativo no momento.</div>`; return; }
   wrap.innerHTML = tabelaAtendimentos(demais);
@@ -2983,6 +3009,9 @@ function renderCaixaDeEntrada(lista){
   const card = $('#caixa-entrada-card');
   const wrap = $('#caixa-entrada-wrap');
   if(!card || !wrap) return;
+
+  const contador = $('#caixa-entrada-contador');
+  if(contador) contador.textContent = String(lista.length);
 
   if(!lista.length){
     card.style.display = 'none';
@@ -3025,7 +3054,22 @@ async function assumirAtendimento(id, btnEl){
   }
 
   if(!data || !data.length){
-    toast('Este atendimento já foi assumido por outro técnico.');
+    // 0 linhas afetadas pode ser uma corrida legítima (outro técnico
+    // realmente assumiu primeiro) OU um bloqueio de permissão (RLS) — as
+    // duas situações pareciam idênticas antes, e a mensagem sempre dizia
+    // "outro técnico assumiu", mesmo quando isso era falso. Agora
+    // conferimos o estado real antes de afirmar qualquer coisa.
+    const { data: atual } = await sb.from('atendimentos')
+      .select('agente_id, agentes(nome)')
+      .eq('id', id)
+      .maybeSingle();
+
+    if(atual?.agente_id){
+      toast(`Este atendimento já foi assumido por ${atual.agentes?.nome || 'outro técnico'}.`);
+    }else{
+      toast('Não foi possível assumir este atendimento — parece um bloqueio de permissão, não outro técnico. Avise o supervisor.');
+    }
+    if(btnEl){ btnEl.disabled = false; btnEl.textContent = 'Assumir atendimento'; }
     renderAtendimentosAtivos();
     return;
   }
