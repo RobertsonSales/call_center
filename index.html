@@ -3361,8 +3361,14 @@ async function carregarAgentesParaFiltro(){
   if(sel) sel.innerHTML = '<option value="">Todos</option>' + agentesCache.map(a=>`<option value="${a.id}">${a.nome}</option>`).join('');
 }
 
-$('#btn-filtrar-supervisao')?.addEventListener('click', renderSupervisao);
+let timerFiltroProtocoloSupervisao = null;
+
+$('#btn-filtrar-supervisao')?.addEventListener('click', ()=>{
+  clearTimeout(timerFiltroProtocoloSupervisao);
+  renderSupervisao();
+});
 $('#btn-limpar-supervisao')?.addEventListener('click', ()=>{
+  clearTimeout(timerFiltroProtocoloSupervisao);
   $('#fs-de').value=''; $('#fs-ate').value=''; $('#fs-protocolo').value='';
   $('#fs-agente').value=''; $('#fs-linha').value=''; $('#fs-status').value='';
   renderSupervisao();
@@ -3373,10 +3379,15 @@ $('#btn-limpar-supervisao')?.addEventListener('click', ()=>{
 // funciona como busca inteligente: filtra à medida que se digita, com uma
 // pequena pausa para não disparar uma consulta a cada letra. Só as datas
 // (De/Até) continuam exigindo o clique.
-$('#fs-agente')?.addEventListener('change', ()=> renderSupervisao());
-$('#fs-linha')?.addEventListener('change', ()=> renderSupervisao());
-$('#fs-status')?.addEventListener('change', ()=> renderSupervisao());
-let timerFiltroProtocoloSupervisao = null;
+//
+// Toda ação imediata (Agente/Linha/Status/Filtrar/Limpar) cancela a
+// pausa pendente do Protocolo — sem isso, digitar algo e mudar de
+// filtro logo em seguida disparava DOIS carregamentos de métricas quase
+// ao mesmo tempo, corrompendo os gráficos (a segunda chamada mexia nos
+// mesmos elementos que a primeira ainda não tinha terminado de montar).
+$('#fs-agente')?.addEventListener('change', ()=>{ clearTimeout(timerFiltroProtocoloSupervisao); renderSupervisao(); });
+$('#fs-linha')?.addEventListener('change', ()=>{ clearTimeout(timerFiltroProtocoloSupervisao); renderSupervisao(); });
+$('#fs-status')?.addEventListener('change', ()=>{ clearTimeout(timerFiltroProtocoloSupervisao); renderSupervisao(); });
 $('#fs-protocolo')?.addEventListener('input', ()=>{
   clearTimeout(timerFiltroProtocoloSupervisao);
   timerFiltroProtocoloSupervisao = setTimeout(()=> renderSupervisao(), 350);
@@ -3786,8 +3797,14 @@ async function alternarAtivoAgente(agente){
 }
 
 
-$('#btn-filtrar-historico').addEventListener('click', renderHistorico);
+let timerFiltroProtocoloHistorico = null;
+
+$('#btn-filtrar-historico').addEventListener('click', ()=>{
+  clearTimeout(timerFiltroProtocoloHistorico);
+  renderHistorico();
+});
 $('#btn-limpar-historico').addEventListener('click', ()=>{
+  clearTimeout(timerFiltroProtocoloHistorico);
   $('#fh-de').value=''; $('#fh-ate').value=''; $('#fh-protocolo').value='';
   $('#fh-linha').value=''; $('#fh-status').value='';
   renderHistorico();
@@ -3795,10 +3812,11 @@ $('#btn-limpar-historico').addEventListener('click', ()=>{
 
 // Linha, Status e Protocolo filtram sozinhos, sem precisar clicar em
 // "Filtrar" — só as datas (De/Até) continuam exigindo o clique, já que
-// normalmente faz sentido escolher as duas antes de buscar.
-$('#fh-linha')?.addEventListener('change', ()=> renderHistorico());
-$('#fh-status')?.addEventListener('change', ()=> renderHistorico());
-let timerFiltroProtocoloHistorico = null;
+// normalmente faz sentido escolher as duas antes de buscar. Toda ação
+// imediata cancela a pausa pendente do Protocolo (mesmo motivo do
+// ajuste em Supervisão — evita duas buscas sobrepostas).
+$('#fh-linha')?.addEventListener('change', ()=>{ clearTimeout(timerFiltroProtocoloHistorico); renderHistorico(); });
+$('#fh-status')?.addEventListener('change', ()=>{ clearTimeout(timerFiltroProtocoloHistorico); renderHistorico(); });
 $('#fh-protocolo')?.addEventListener('input', ()=>{
   clearTimeout(timerFiltroProtocoloHistorico);
   timerFiltroProtocoloHistorico = setTimeout(()=> renderHistorico(), 350);
