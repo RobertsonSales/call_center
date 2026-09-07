@@ -630,6 +630,10 @@
             <input id="vt-equipamento" placeholder="Digite para buscar na base ou informe manualmente, separando por vírgula…" autocomplete="off"/>
             <p class="hint" style="margin-top:6px;">Clique num resultado da lista ao lado para adicionar; pode informar mais de um separando por vírgula.</p>
           </div>
+          <div class="field">
+            <label>Número(s) de série</label>
+            <textarea id="vt-numero-serie" rows="2" placeholder="Preenchido automaticamente ao adicionar equipamentos do catálogo — um por linha"></textarea>
+          </div>
           <div class="field"><label>Período de referência (opcional)</label><input id="vt-periodo" placeholder="Ex: Julho/2026"/></div>
           <div class="field"><label>Mensagem adicional (opcional)</label><textarea id="vt-mensagem" rows="2" placeholder="Ex: favor informar também eventuais equipamentos parados no período"></textarea></div>
           <div class="hint" id="vt-catalogo-hint" style="display:none;margin-bottom:10px;"></div>
@@ -2663,12 +2667,13 @@ function montarMensagemVolume(){
   const unidade = $('#vt-unidade').value.trim();
   const colaborador = $('#vt-colaborador').value.trim();
   const equipamento = $('#vt-equipamento').value.replace(/,\s*$/,'').trim();
+  const numeroSerie = $('#vt-numero-serie').value.trim();
   const periodo = $('#vt-periodo').value.trim();
   const extra = $('#vt-mensagem').value.trim();
-  return `Olá! 👋\n\nSolicitação interna de volume de testes.\nProtocolo: (gerado ao salvar)\n${unidade?'Unidade: '+unidade+'\n':''}${colaborador?'Colaborador: '+colaborador+'\n':''}${equipamento?'Equipamento(s): '+equipamento+'\n':''}${periodo?'Período de referência: '+periodo+'\n':''}\nPor favor, nos informe o volume de testes realizados${periodo?' no período':''} pelo(s) equipamento(s) acima. Se possível, envie também o print/foto do contador ou relatório — vamos anexar aqui no protocolo assim que recebermos.${extra?'\n\n'+extra:''}`;
+  return `Olá! 👋\n\nSolicitação interna de volume de testes.\nProtocolo: (gerado ao salvar)\n${unidade?'Unidade: '+unidade+'\n':''}${colaborador?'Colaborador: '+colaborador+'\n':''}${equipamento?'Equipamento(s): '+equipamento+'\n':''}${numeroSerie?'Número(s) de série:\n'+numeroSerie+'\n':''}${periodo?'Período de referência: '+periodo+'\n':''}\nPor favor, nos informe o volume de testes realizados${periodo?' no período':''} pelo(s) equipamento(s) acima. Se possível, envie também o print/foto do contador ou relatório — vamos anexar aqui no protocolo assim que recebermos.${extra?'\n\n'+extra:''}`;
 }
 
-['vt-unidade','vt-colaborador','vt-equipamento','vt-periodo','vt-mensagem'].forEach(id=>{
+['vt-unidade','vt-colaborador','vt-equipamento','vt-numero-serie','vt-periodo','vt-mensagem'].forEach(id=>{
   $('#'+id).addEventListener('input', ()=>{ $('#vt-preview-text').textContent = montarMensagemVolume(); });
 });
 
@@ -2812,15 +2817,28 @@ function adicionarEquipamentoVolume(nome){
   if(partes.length && campo.value.trim() && !campo.value.trim().endsWith(',')){
     partes.pop();
   }
-  if(!partes.some(p => normalizarTexto(p) === normalizarTexto(nome))) partes.push(nome);
+  const jaTinha = partes.some(p => normalizarTexto(p) === normalizarTexto(nome));
+  if(!jaTinha) partes.push(nome);
   campo.value = partes.join(', ') + ', ';
+
+  // registra o número de série correspondente, se o equipamento veio do
+  // catálogo — cada linha já se identifica pelo nome do equipamento, então
+  // não depende de manter duas listas alinhadas por posição (frágil, dado
+  // que aqui é possível adicionar vários equipamentos de uma vez).
+  const equipCatalogo = vtEquipamentosDoClienteCache.find(e => normalizarTexto(e.nome) === normalizarTexto(nome));
+  const campoSerie = $('#vt-numero-serie');
+  if(campoSerie && !jaTinha && equipCatalogo?.numero_serie){
+    const linha = `${equipCatalogo.nome}: ${equipCatalogo.numero_serie}`;
+    campoSerie.value = campoSerie.value.trim() ? campoSerie.value.trim() + '\n' + linha : linha;
+  }
+
   $('#vt-preview-text').textContent = montarMensagemVolume();
   campo.focus();
 }
 
 function limparFormularioVolume(){
   $('#vt-unidade').value=''; $('#vt-colaborador').value=''; $('#vt-telefone').value='';
-  $('#vt-equipamento').value=''; $('#vt-periodo').value=''; $('#vt-mensagem').value='';
+  $('#vt-equipamento').value=''; $('#vt-numero-serie').value=''; $('#vt-periodo').value=''; $('#vt-mensagem').value='';
   $('#vt-preview-text').textContent = 'Preencha o formulário ao lado para ver a prévia…';
   $('#vt-catalogo-hint').style.display = 'none';
   esconderResultadosVolume();
@@ -2846,6 +2864,7 @@ $('#btn-criar-volume').addEventListener('click', async ()=>{
   const colaborador = $('#vt-colaborador').value.trim();
   const telefone = comDDI55($('#vt-telefone').value);
   const equipamento = $('#vt-equipamento').value.replace(/,\s*$/,'').trim();
+  const numeroSerie = $('#vt-numero-serie').value.trim();
   const periodo = $('#vt-periodo').value.trim();
   const mensagemExtra = $('#vt-mensagem').value.trim();
 
@@ -2880,7 +2899,7 @@ $('#btn-criar-volume').addEventListener('click', async ()=>{
 
     if(error){ toast('Erro ao criar solicitação: '+error.message); if(winWhats && !winWhats.closed) winWhats.close(); return; }
 
-    const mensagem = `Olá! 👋\n\nSolicitação interna de volume de testes.\nProtocolo: ${data.protocolo}\nUnidade: ${unidade}\nColaborador: ${colaborador}\n${equipamento?'Equipamento(s): '+equipamento+'\n':''}${periodo?'Período de referência: '+periodo+'\n':''}\nPor favor, nos informe o volume de testes realizados${periodo?' no período':''} pelo(s) equipamento(s) acima. Se possível, envie também o print/foto do contador ou relatório — vamos anexar aqui no protocolo assim que recebermos.${mensagemExtra?'\n\n'+mensagemExtra:''}`;
+    const mensagem = `Olá! 👋\n\nSolicitação interna de volume de testes.\nProtocolo: ${data.protocolo}\nUnidade: ${unidade}\nColaborador: ${colaborador}\n${equipamento?'Equipamento(s): '+equipamento+'\n':''}${numeroSerie?'Número(s) de série:\n'+numeroSerie+'\n':''}${periodo?'Período de referência: '+periodo+'\n':''}\nPor favor, nos informe o volume de testes realizados${periodo?' no período':''} pelo(s) equipamento(s) acima. Se possível, envie também o print/foto do contador ou relatório — vamos anexar aqui no protocolo assim que recebermos.${mensagemExtra?'\n\n'+mensagemExtra:''}`;
 
     let envioApiFalhou = false;
     if(usaApi){
