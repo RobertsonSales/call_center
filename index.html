@@ -568,7 +568,6 @@
         <div><h1>Painel</h1><p>Visão consolidada dos protocolos que você atende.</p></div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-ghost btn-sm" id="btn-abrir-busca">🔍 Buscar cliente/equipamento</button>
-          <button class="btn btn-primary btn-sm" id="btn-atalho-novo">＋ Novo atendimento</button>
         </div>
       </div>
       <div class="grid-3" style="margin-bottom:22px;">
@@ -777,6 +776,14 @@
     <!-- ---------- CLIENTES & EQUIPAMENTOS ---------- -->
     <section class="view" id="view-catalogo">
       <div class="topbar"><div><h1>Clientes &amp; Equipamentos</h1><p>Consulte clientes e os equipamentos vinculados a eles pelas caixas de busca abaixo. Cadastrar, editar ou inativar é reservado ao Supervisor.</p></div></div>
+
+      <div class="card card-pad" id="catalogo-import-area" style="display:none;margin-bottom:16px;">
+        <p class="section-title" style="margin-bottom:8px;">📥 Importar planilha de equipamentos</p>
+        <p class="hint" style="margin-bottom:10px;">Aceita .xlsx com as colunas REGIÃO, CATEGORIA, UNIDADE, EQUIPAMENTO, SERIAL. Clientes e equipamentos existentes (mesmo nome/serial) são atualizados, não duplicados.</p>
+        <input type="file" id="input-importar-planilha" accept=".xlsx,.xls" style="display:none;"/>
+        <button class="btn btn-ghost btn-sm" id="btn-importar-planilha">📥 Importar planilha</button>
+        <div id="import-status" class="hint" style="margin-top:10px;"></div>
+      </div>
 
       <div class="grid-2" id="catalogo-forms" style="display:none;margin-bottom:16px;">
         <div class="card card-pad">
@@ -1004,14 +1011,6 @@
       </div>
 
       <div id="busca-resultados"><p class="hint">Digite algo ou use os filtros e clique em "Buscar".</p></div>
-
-      <div id="busca-import-area" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
-        <p class="section-title" style="margin-bottom:8px;">Importar planilha de equipamentos (Supervisor)</p>
-        <p class="hint" style="margin-bottom:10px;">Aceita .xlsx com as colunas REGIÃO, CATEGORIA, UNIDADE, EQUIPAMENTO, SERIAL. Clientes e equipamentos existentes (mesmo nome/serial) são atualizados, não duplicados.</p>
-        <input type="file" id="input-importar-planilha" accept=".xlsx,.xls" style="display:none;"/>
-        <button class="btn btn-ghost btn-sm" id="btn-importar-planilha">📥 Importar planilha</button>
-        <div id="import-status" class="hint" style="margin-top:10px;"></div>
-      </div>
     </div>
   </div>
 </div>
@@ -1725,6 +1724,7 @@ let equipamentoEditandoId = null;
 
 async function renderCatalogo(){
   $('#catalogo-forms').style.display = currentAgente.is_admin ? 'grid' : 'none';
+  $('#catalogo-import-area').style.display = currentAgente.is_admin ? 'block' : 'none';
   await Promise.all([renderClientes(), renderEquipamentos()]);
   await popularSelectClientesEquipamento();
 }
@@ -2028,7 +2028,6 @@ $('#btn-cancelar-edicao-equip')?.addEventListener('click', cancelarEdicaoEquipam
 // ---------------- BUSCA INTELIGENTE (modal do painel) ----------------
 async function abrirBuscaCatalogo(){
   $('#modal-busca-overlay').classList.add('active');
-  $('#busca-import-area').style.display = currentAgente.is_admin ? 'block' : 'none';
   await carregarFiltrosBusca();
   montarAutocompleteLocal({
     inputEl: $('#busca-cliente-input'),
@@ -2056,7 +2055,6 @@ async function abrirBuscaCatalogo(){
 function fecharBuscaCatalogo(){ $('#modal-busca-overlay').classList.remove('active'); }
 
 $('#btn-abrir-busca')?.addEventListener('click', abrirBuscaCatalogo);
-$('#btn-atalho-novo')?.addEventListener('click', ()=> switchView('novo'));
 $('#modal-busca-close')?.addEventListener('click', fecharBuscaCatalogo);
 $('#modal-busca-overlay')?.addEventListener('click', (e)=>{ if(e.target.id==='modal-busca-overlay') fecharBuscaCatalogo(); });
 
