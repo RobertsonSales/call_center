@@ -640,6 +640,9 @@
             </div>
             <p class="section-title">Mensagem para o cliente</p>
             <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;" id="novo-confirmacao-mensagem"></div>
+            <div id="novo-confirmacao-audio" style="display:none;margin-bottom:14px;">
+              <button type="button" class="btn btn-ghost btn-block" id="btn-novo-gravar-audio">🎤 Gravar áudio complementar para o cliente</button>
+            </div>
             <a class="btn btn-whatsapp btn-block" id="novo-confirmacao-link" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar ao cliente</a>
             <p class="hint" style="margin-bottom:10px;">A conversa continua no WhatsApp real — use o botão abaixo para ir registrando novos procedimentos e observações à medida que forem surgindo, ou para encerrar quando o caso for resolvido.</p>
             <button class="btn btn-primary btn-block" id="btn-continuar-atendimento" style="margin-bottom:10px;">Continuar atendimento (procedimentos, observações ou encerrar)</button>
@@ -697,6 +700,9 @@
             </div>
             <p class="section-title">Mensagem para o colaborador</p>
             <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;" id="vt-confirmacao-mensagem"></div>
+            <div id="vt-confirmacao-audio" style="display:none;margin-bottom:14px;">
+              <button type="button" class="btn btn-ghost btn-block" id="btn-vt-gravar-audio">🎤 Gravar áudio complementar para o colaborador</button>
+            </div>
             <a class="btn btn-whatsapp btn-block" id="vt-confirmacao-link" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
             <p class="hint" style="margin-bottom:10px;">Quando o colaborador responder pelo WhatsApp com os números (e a foto/print, se houver), abra este mesmo protocolo para anexar o arquivo recebido.</p>
             <button class="btn btn-primary btn-block" id="btn-ir-protocolo-volume" style="margin-bottom:10px;">Abrir este protocolo para anexar a resposta</button>
@@ -2562,6 +2568,7 @@ function limparFormularioNovoAtendimento(){
   $('#novo-confirmacao').style.display = 'none';
   $('#novo-form-preview').style.display = 'block';
   $('#novo-form-botoes').style.display = 'flex';
+  const areaAudioNovo = $('#novo-confirmacao-audio'); if(areaAudioNovo) areaAudioNovo.style.display = 'none';
   ultimoAtendimentoCriadoId = null;
 }
 
@@ -2672,6 +2679,30 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
       link.href = waLink(cliente_telefone, mensagem);
       link.target = WA_TAB;
     }
+
+    // áudio complementar: só faz sentido oferecer quando a linha já está
+    // na API (é a mesma restrição do compositor da Janela de Conversa) —
+    // usa .onclick (não addEventListener) porque este painel não é
+    // recriado a cada atendimento, então evita empilhar handlers antigos
+    // se o técnico criar vários protocolos seguidos sem trocar de tela.
+    const areaAudioNovo = $('#novo-confirmacao-audio');
+    if(usaApi && !envioApiFalhou){
+      areaAudioNovo.style.display = 'block';
+      const btnAudioNovo = $('#btn-novo-gravar-audio');
+      btnAudioNovo.onclick = ()=> alternarGravacaoGenerica(btnAudioNovo, async (blob)=>{
+        toast('Enviando áudio…');
+        try{
+          const url = await uploadAudioGravado(blob, data.id);
+          await enviarViaWhatsAppApi({ atendimentoId: data.id, telefone: cliente_telefone, audioUrl: url, agenteId: currentAgente.id });
+          toast('Áudio enviado.');
+        }catch(errAudio){
+          mostrarAvisoModal('Não foi possível enviar o áudio: '+traduzirErroWhatsApp(errAudio?.message || errAudio));
+        }
+      });
+    }else{
+      areaAudioNovo.style.display = 'none';
+    }
+
     ultimoAtendimentoCriadoId = data.id;
 
   }catch(err){
@@ -2888,6 +2919,7 @@ function limparFormularioVolume(){
   $('#vt-confirmacao').style.display = 'none';
   $('#volume-form-preview').style.display = 'block';
   $('#vt-form-botoes').style.display = 'flex';
+  const areaAudioVt = $('#vt-confirmacao-audio'); if(areaAudioVt) areaAudioVt.style.display = 'none';
   ultimoAtendimentoVolumeCriadoId = null;
 }
 
@@ -3001,6 +3033,27 @@ $('#btn-criar-volume').addEventListener('click', async ()=>{
       link.href = waLink(telefone, mensagem);
       link.target = WA_TAB;
     }
+
+    // áudio complementar, mesmo padrão do Novo Atendimento — só quando a
+    // linha já está na API.
+    const areaAudioVt = $('#vt-confirmacao-audio');
+    if(usaApi && !envioApiFalhou){
+      areaAudioVt.style.display = 'block';
+      const btnAudioVt = $('#btn-vt-gravar-audio');
+      btnAudioVt.onclick = ()=> alternarGravacaoGenerica(btnAudioVt, async (blob)=>{
+        toast('Enviando áudio…');
+        try{
+          const url = await uploadAudioGravado(blob, data.id);
+          await enviarViaWhatsAppApi({ atendimentoId: data.id, telefone, audioUrl: url, agenteId: currentAgente.id });
+          toast('Áudio enviado.');
+        }catch(errAudio){
+          mostrarAvisoModal('Não foi possível enviar o áudio: '+traduzirErroWhatsApp(errAudio?.message || errAudio));
+        }
+      });
+    }else{
+      areaAudioVt.style.display = 'none';
+    }
+
     ultimoAtendimentoVolumeCriadoId = data.id;
 
   }catch(err){
@@ -4336,78 +4389,76 @@ async function abrirDetalhe(id){
 // Traduz os erros mais comuns que a Meta devolve para uma linguagem que
 // faz sentido pra quem está atendendo, em vez do JSON cru da API.
 // ---------------- MENSAGEM DE VOZ ----------------
-// Grava pelo microfone do navegador (MediaRecorder, nativo — não exige
-// nenhuma instalação) e envia como áudio comum pela API (ver Mudanças de
-// Cobrança da Meta 2026, capítulo 6 — começamos pelo formato mais simples,
-// sem a conversão que uma "nota de voz nativa" exigiria).
-let mediaRecorderAtual = null;
-let audioChunksAtual = [];
-let gravandoAudio = false;
+// Gravação genérica e reutilizável — usada pelo compositor da Janela de
+// Conversa e, agora, também nas telas de criação de protocolo (Novo
+// Atendimento, Volume de Testes) e na Transferência, sempre que fizer
+// sentido enviar um áudio complementar pela API (ver Mudanças de Cobrança
+// da Meta 2026, capítulo 6). Só uma gravação por vez, não importa o botão.
+let gravadorAtivo = null;
+let audioTransferenciaBlob = null; // guardado entre a gravação e a confirmação do envio, no formulário de Transferir/Reenviar
+
+function alternarGravacaoGenerica(btnEl, aoFinalizar){
+  if(gravadorAtivo && gravadorAtivo.state === 'recording'){
+    gravadorAtivo.stop();
+    return;
+  }
+  if(gravadorAtivo) return; // já existe uma gravação em andamento em outro botão
+  if(!navigator.mediaDevices?.getUserMedia){
+    toast('Este navegador não tem suporte a gravação de áudio.');
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream=>{
+    const chunks = [];
+    const rec = new MediaRecorder(stream);
+    rec.addEventListener('dataavailable', (e)=>{ if(e.data && e.data.size > 0) chunks.push(e.data); });
+    rec.addEventListener('stop', ()=>{
+      stream.getTracks().forEach(t => t.stop()); // libera o microfone
+      gravadorAtivo = null;
+      if(btnEl){ btnEl.textContent = '🎤'; btnEl.classList.remove('gravando'); btnEl.title = 'Gravar áudio'; }
+      const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+      aoFinalizar(blob);
+    });
+    rec.start();
+    gravadorAtivo = rec;
+    if(btnEl){ btnEl.textContent = '⏹'; btnEl.classList.add('gravando'); btnEl.title = 'Gravando… clique para parar e enviar'; }
+  }).catch(err=>{
+    console.error('[audio] erro ao acessar microfone:', err);
+    toast('Não foi possível acessar o microfone — confira a permissão do navegador.');
+  });
+}
+
+// Sobe o áudio já gravado para o mesmo bucket usado por todos os anexos —
+// só prepara o arquivo e devolve a URL pública; quem chama decide como
+// enviar (composer da conversa, confirmação de criação, transferência…).
+async function uploadAudioGravado(blob, pastaId){
+  if(blob.size < 800) throw new Error('Gravação muito curta — tente de novo.');
+  const extensao = (blob.type.split('/')[1] || 'webm').split(';')[0];
+  const caminho = `${pastaId}/audio_${Date.now()}.${extensao}`;
+  const { error } = await sb.storage.from('evidencias').upload(caminho, blob, { contentType: blob.type });
+  if(error) throw error;
+  const { data: pub } = sb.storage.from('evidencias').getPublicUrl(caminho);
+  return pub.publicUrl;
+}
 
 async function alternarGravacaoAudio(atendimento){
   const btn = $('#btn-chat-gravar-audio');
   if(!btn) return;
-
-  if(!gravandoAudio){
-    if(!navigator.mediaDevices?.getUserMedia){
-      toast('Este navegador não tem suporte a gravação de áudio.');
-      return;
-    }
-    try{
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioChunksAtual = [];
-      mediaRecorderAtual = new MediaRecorder(stream);
-      mediaRecorderAtual.addEventListener('dataavailable', (e)=>{
-        if(e.data && e.data.size > 0) audioChunksAtual.push(e.data);
-      });
-      mediaRecorderAtual.addEventListener('stop', ()=>{
-        stream.getTracks().forEach(t => t.stop()); // libera o microfone
-        enviarAudioGravado(atendimento);
-      });
-      mediaRecorderAtual.start();
-      gravandoAudio = true;
-      btn.textContent = '⏹';
-      btn.classList.add('gravando');
-      btn.title = 'Gravando… clique para parar e enviar';
-    }catch(err){
-      console.error('[audio] erro ao acessar microfone:', err);
-      toast('Não foi possível acessar o microfone — confira a permissão do navegador.');
-    }
-  }else{
-    mediaRecorderAtual.stop();
-    gravandoAudio = false;
-    btn.textContent = '🎤';
-    btn.classList.remove('gravando');
-    btn.title = 'Gravar e enviar mensagem de voz';
-  }
+  alternarGravacaoGenerica(btn, (blob)=> enviarAudioGravado(atendimento, blob));
 }
 
-async function enviarAudioGravado(atendimento){
+async function enviarAudioGravado(atendimento, blob){
   const usaApi = atendimento.canal === 'whatsapp_api' || linhaTemApiAtiva(atendimento.linha_id);
   if(!usaApi){
     toast('Envio de áudio só está disponível em linhas já conectadas à API.');
     return;
   }
-  const blob = new Blob(audioChunksAtual, { type: mediaRecorderAtual?.mimeType || 'audio/webm' });
-  if(blob.size < 800){
-    toast('Gravação muito curta — tente de novo.');
-    return;
-  }
-
   toast('Enviando áudio…');
   try{
-    const extensao = (blob.type.split('/')[1] || 'webm').split(';')[0];
-    const caminho = `${atendimento.id}/audio_${Date.now()}.${extensao}`;
-    const { error: upErr } = await sb.storage.from('evidencias').upload(caminho, blob, { contentType: blob.type });
-    if(upErr){ toast('Erro ao enviar áudio: '+upErr.message); return; }
-
-    const { data: pub } = sb.storage.from('evidencias').getPublicUrl(caminho);
-
+    const url = await uploadAudioGravado(blob, atendimento.id);
     await enviarViaWhatsAppApi({
       atendimentoId: atendimento.id, telefone: atendimento.cliente_telefone,
-      audioUrl: pub.publicUrl, agenteId: currentAgente.id
+      audioUrl: url, agenteId: currentAgente.id
     });
-
     if(atendimento.status === 'aberto'){
       await sb.from('atendimentos').update({status:'em_andamento'}).eq('id', atendimento.id);
     }
@@ -4610,6 +4661,7 @@ function abrirTransferencia(atendimento, interacoes){
 // (foto/PDF) para dar mais contexto a quem vai continuar o caso.
 function mostrarFormularioEnvio(atendimento, interacoes, modo){
   const ehTransferencia = modo === 'transferir';
+  const usaApiEnvio = atendimento.canal === 'whatsapp_api' || linhaTemApiAtiva(atendimento.linha_id);
   $('#modal-overlay').classList.add('active');
   $('#modal-protocolo-label').textContent = ehTransferencia ? 'Transferir atendimento' : 'Reenviar histórico';
   $('#modal-protocolo').textContent = atendimento.protocolo;
@@ -4641,6 +4693,12 @@ function mostrarFormularioEnvio(atendimento, interacoes, modo){
       <input type="file" id="dest-arquivo" accept="image/*,.pdf"/>
       <p class="hint">Foto, PDF etc. — um link para o arquivo é incluído na mensagem enviada.</p>
     </div>
+    ${usaApiEnvio ? `<div class="field">
+      <label>Áudio complementar (opcional)</label>
+      <button type="button" class="btn btn-ghost btn-sm" id="btn-dest-gravar-audio">🎤 Gravar áudio</button>
+      <span class="hint" id="dest-audio-status" style="margin-left:8px;"></span>
+      <p class="hint" style="margin-top:6px;">Enviado como uma segunda mensagem, logo após o resumo em texto.</p>
+    </div>` : ''}
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:16px;cursor:pointer;">
       <input type="checkbox" id="dest-presencial" style="width:16px;height:16px;"/>
       Redirecionamento para técnico em visita presencial
@@ -4667,6 +4725,16 @@ function mostrarFormularioEnvio(atendimento, interacoes, modo){
 
   $('#btn-cancelar-envio').addEventListener('click', ()=> abrirDetalhe(atendimento.id));
   $('#btn-confirmar-envio').addEventListener('click', ()=> confirmarEnvio(atendimento, interacoes, modo));
+
+  // áudio complementar — grava e guarda o blob; o upload/envio de verdade
+  // só acontece dentro de confirmarEnvio, junto com o restante do envio,
+  // para não mandar nada antes de o técnico confirmar tudo.
+  audioTransferenciaBlob = null;
+  const btnAudioDest = $('#btn-dest-gravar-audio');
+  btnAudioDest?.addEventListener('click', ()=> alternarGravacaoGenerica(btnAudioDest, (blob)=>{
+    audioTransferenciaBlob = blob;
+    $('#dest-audio-status').textContent = '✓ Áudio gravado — será enviado junto.';
+  }));
 }
 
 async function confirmarEnvio(atendimento, interacoes, modo){
@@ -4730,6 +4798,22 @@ async function confirmarEnvio(atendimento, interacoes, modo){
         console.error('[confirmar-envio] falha ao enviar via API:', errEnvio);
         toast('Registrado, mas o envio automático falhou: '+errEnvio.message);
       }
+
+      // áudio complementar, se foi gravado — sai como uma SEGUNDA
+      // mensagem, logo após o resumo em texto, nunca no lugar dele (o
+      // resumo carrega contexto estruturado que vale sempre preservar).
+      if(audioTransferenciaBlob){
+        try{
+          status.textContent = 'Enviando áudio complementar…';
+          const urlAudio = await uploadAudioGravado(audioTransferenciaBlob, atendimento.id);
+          await enviarViaWhatsAppApi({ atendimentoId: atendimento.id, telefone, audioUrl: urlAudio, agenteId: currentAgente.id });
+        }catch(errAudio){
+          console.error('[confirmar-envio] falha ao enviar áudio complementar:', errAudio);
+          toast('Resumo enviado, mas o áudio complementar falhou: '+(errAudio?.message || errAudio));
+        }
+        audioTransferenciaBlob = null;
+      }
+
       await sb.from('interacoes').insert({
         atendimento_id: atendimento.id, agente_id: currentAgente.id,
         tipo: ehTransferencia ? 'transferencia' : 'reenvio',
