@@ -430,11 +430,17 @@
   #btn-chat-gravar-audio.gravando, .btn-mic.gravando{background:var(--danger);color:#fff;border-color:var(--danger);animation:pulsar-gravacao 1.2s ease-in-out infinite;}
   @keyframes pulsar-gravacao{0%,100%{opacity:1;}50%{opacity:.55;}}
   .chat-bubble audio{max-width:220px;height:34px;display:block;margin-top:4px;}
+  .chat-bubble video{max-width:220px;max-height:200px;border-radius:8px;display:block;margin-top:4px;}
   /* indicador de gravação — bem mais visível do que só a cor do botão
      mudar: pílula vermelha com ponto pulsante e cronômetro ao vivo,
      inserida ao lado de qualquer botão de áudio enquanto grava. */
   .indicador-gravacao{display:inline-flex;align-items:center;gap:7px;margin-left:10px;padding:5px 12px;border-radius:20px;background:var(--danger);color:#fff;font-size:12.5px;font-weight:700;vertical-align:middle;}
   .ponto-gravacao{width:9px;height:9px;border-radius:50%;background:#fff;animation:pulsar-gravacao 1s ease-in-out infinite;flex-shrink:0;}
+  /* prévia de áudio/vídeo antes de enviar — nada sai sem confirmar aqui */
+  .previa-midia{display:block;margin-top:10px;padding:10px;border:1.5px solid var(--primary);border-radius:10px;background:var(--surface);}
+  .previa-midia video{max-width:260px;max-height:200px;border-radius:8px;display:block;}
+  .previa-midia audio{width:260px;display:block;}
+  .previa-midia-acoes{display:flex;gap:8px;margin-top:8px;}
 
   /* Fundo sempre escuro (var(--sidebar-bg) é quase preto nos dois temas)
      com texto sempre branco — antes usava var(--text) como fundo, que no
@@ -648,8 +654,10 @@
             </div>
             <p class="section-title">Mensagem para o cliente</p>
             <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;" id="novo-confirmacao-mensagem"></div>
-            <div id="novo-confirmacao-audio" style="display:none;margin-bottom:14px;">
-              <button type="button" class="btn btn-ghost btn-block" id="btn-novo-gravar-audio">🎤 Gravar áudio complementar para o cliente</button>
+            <div id="novo-confirmacao-audio" style="display:none;margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;">
+              <button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-novo-gravar-audio" title="Gravar áudio complementar">🎤 Áudio</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-novo-gravar-video" title="Gravar vídeo complementar">🎥 Vídeo</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-novo-anexar-video" title="Anexar vídeo já gravado">📹 Anexar vídeo</button>
             </div>
             <a class="btn btn-whatsapp btn-block" id="novo-confirmacao-link" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar ao cliente</a>
             <p class="hint" style="margin-bottom:10px;">A conversa continua no WhatsApp real — use o botão abaixo para ir registrando novos procedimentos e observações à medida que forem surgindo, ou para encerrar quando o caso for resolvido.</p>
@@ -708,8 +716,10 @@
             </div>
             <p class="section-title">Mensagem para o colaborador</p>
             <div style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:13px;line-height:1.55;white-space:pre-wrap;margin-bottom:16px;" id="vt-confirmacao-mensagem"></div>
-            <div id="vt-confirmacao-audio" style="display:none;margin-bottom:14px;">
-              <button type="button" class="btn btn-ghost btn-block" id="btn-vt-gravar-audio">🎤 Gravar áudio complementar para o colaborador</button>
+            <div id="vt-confirmacao-audio" style="display:none;margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;">
+              <button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-vt-gravar-audio" title="Gravar áudio complementar">🎤 Áudio</button>
+              <button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-vt-gravar-video" title="Gravar vídeo complementar">🎥 Vídeo</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-vt-anexar-video" title="Anexar vídeo já gravado">📹 Anexar vídeo</button>
             </div>
             <a class="btn btn-whatsapp btn-block" id="vt-confirmacao-link" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
             <p class="hint" style="margin-bottom:10px;">Quando o colaborador responder pelo WhatsApp com os números (e a foto/print, se houver), abra este mesmo protocolo para anexar o arquivo recebido.</p>
@@ -1564,13 +1574,14 @@ function linhaTemApiAtiva(linhaId){
 // a aplicação NÃO deve inserir a interação de novo (ver os pontos de chamada
 // em "Novo Atendimento", "Solicitar Volume de Testes", "Salvar e enviar" e
 // "Transferir/Reenviar").
-async function enviarViaWhatsAppApi({ atendimentoId, telefone, texto, agenteId, audioUrl }){
+async function enviarViaWhatsAppApi({ atendimentoId, telefone, texto, agenteId, audioUrl, videoUrl }){
   const { data: sessao } = await sb.auth.getSession();
   const token = sessao?.session?.access_token;
   if(!token) throw new Error('Sessão expirada — faça login novamente.');
 
   const corpo = { atendimento_id: atendimentoId, telefone, agente_id: agenteId ?? null };
   if(audioUrl){ corpo.tipo = 'audio'; corpo.audio_url = audioUrl; }
+  else if(videoUrl){ corpo.tipo = 'video'; corpo.video_url = videoUrl; }
   else{ corpo.texto = texto; }
 
   const resp = await fetch(`${supabaseUrlGlobal}/functions/v1/whatsapp-enviar`, {
@@ -2688,25 +2699,23 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
       link.target = WA_TAB;
     }
 
-    // áudio complementar: só faz sentido oferecer quando a linha já está
-    // na API (é a mesma restrição do compositor da Janela de Conversa) —
+    // Áudio/vídeo complementar: só faz sentido oferecer quando a linha já
+    // está na API (mesma restrição do compositor da Janela de Conversa) —
     // usa .onclick (não addEventListener) porque este painel não é
     // recriado a cada atendimento, então evita empilhar handlers antigos
     // se o técnico criar vários protocolos seguidos sem trocar de tela.
     const areaAudioNovo = $('#novo-confirmacao-audio');
     if(usaApi && !envioApiFalhou){
-      areaAudioNovo.style.display = 'block';
-      const btnAudioNovo = $('#btn-novo-gravar-audio');
-      btnAudioNovo.onclick = ()=> alternarGravacaoGenerica(btnAudioNovo, async (blob)=>{
-        toast('Enviando áudio…');
-        try{
-          const url = await uploadAudioGravado(blob, data.id);
-          await enviarViaWhatsAppApi({ atendimentoId: data.id, telefone: cliente_telefone, audioUrl: url, agenteId: currentAgente.id });
-          toast('Áudio enviado.');
-        }catch(errAudio){
-          mostrarAvisoModal('Não foi possível enviar o áudio: '+traduzirErroWhatsApp(errAudio?.message || errAudio));
-        }
+      areaAudioNovo.style.display = 'flex';
+      const enviarMidiaAqui = (tipo, blob) => enviarMidiaConfirmada({
+        atendimentoId: data.id, telefone: cliente_telefone, tipo, blob
       });
+      const btnAudioNovo = $('#btn-novo-gravar-audio');
+      btnAudioNovo.onclick = ()=> iniciarOuPararGravacao(btnAudioNovo, 'audio', (blob)=> enviarMidiaAqui('audio', blob));
+      const btnVideoNovo = $('#btn-novo-gravar-video');
+      btnVideoNovo.onclick = ()=> iniciarOuPararGravacao(btnVideoNovo, 'video', (blob)=> enviarMidiaAqui('video', blob));
+      const btnAnexarVideoNovo = $('#btn-novo-anexar-video');
+      btnAnexarVideoNovo.onclick = ()=> anexarArquivoVideo(btnAnexarVideoNovo, (blob)=> enviarMidiaAqui('video', blob));
     }else{
       areaAudioNovo.style.display = 'none';
     }
@@ -3042,22 +3051,20 @@ $('#btn-criar-volume').addEventListener('click', async ()=>{
       link.target = WA_TAB;
     }
 
-    // áudio complementar, mesmo padrão do Novo Atendimento — só quando a
-    // linha já está na API.
+    // áudio/vídeo complementar, mesmo padrão do Novo Atendimento — só
+    // quando a linha já está na API.
     const areaAudioVt = $('#vt-confirmacao-audio');
     if(usaApi && !envioApiFalhou){
-      areaAudioVt.style.display = 'block';
-      const btnAudioVt = $('#btn-vt-gravar-audio');
-      btnAudioVt.onclick = ()=> alternarGravacaoGenerica(btnAudioVt, async (blob)=>{
-        toast('Enviando áudio…');
-        try{
-          const url = await uploadAudioGravado(blob, data.id);
-          await enviarViaWhatsAppApi({ atendimentoId: data.id, telefone, audioUrl: url, agenteId: currentAgente.id });
-          toast('Áudio enviado.');
-        }catch(errAudio){
-          mostrarAvisoModal('Não foi possível enviar o áudio: '+traduzirErroWhatsApp(errAudio?.message || errAudio));
-        }
+      areaAudioVt.style.display = 'flex';
+      const enviarMidiaAquiVt = (tipo, blob) => enviarMidiaConfirmada({
+        atendimentoId: data.id, telefone, tipo, blob
       });
+      const btnAudioVt = $('#btn-vt-gravar-audio');
+      btnAudioVt.onclick = ()=> iniciarOuPararGravacao(btnAudioVt, 'audio', (blob)=> enviarMidiaAquiVt('audio', blob));
+      const btnVideoVt = $('#btn-vt-gravar-video');
+      btnVideoVt.onclick = ()=> iniciarOuPararGravacao(btnVideoVt, 'video', (blob)=> enviarMidiaAquiVt('video', blob));
+      const btnAnexarVideoVt = $('#btn-vt-anexar-video');
+      btnAnexarVideoVt.onclick = ()=> anexarArquivoVideo(btnAnexarVideoVt, (blob)=> enviarMidiaAquiVt('video', blob));
     }else{
       areaAudioVt.style.display = 'none';
     }
@@ -4204,14 +4211,22 @@ function renderJanelaConversa(interacoes, statusPorInteracao){
     // do cliente (sem agente); qualquer outra com conteúdo é do lado da
     // empresa (agente ou o envio automático do sistema, sem agente_id).
     const doCliente = i.tipo === 'mensagem_recebida';
-    const anexoImg = /\.(png|jpe?g|gif|webp)(\?|$)/i.test(i.anexo_nome || i.anexo_url || '');
-    const anexoAudio = /\.(webm|ogg|mp3|m4a|wav|aac|opus)(\?|$)/i.test(i.anexo_nome || i.anexo_url || '');
+    const nomeOuUrl = i.anexo_nome || i.anexo_url || '';
+    const anexoImg = /\.(png|jpe?g|gif|webp)(\?|$)/i.test(nomeOuUrl);
+    // .webm serve tanto para áudio quanto para vídeo gravados pelo
+    // navegador — por isso o prefixo do nome do arquivo (video_/audio_,
+    // definido em uploadMidiaGravada) é checado primeiro, antes de cair
+    // na extensão genérica.
+    const anexoVideo = /\/video_\d/i.test(i.anexo_url || '') || /\.(mp4|mov|m4v)(\?|$)/i.test(nomeOuUrl);
+    const anexoAudio = !anexoVideo && (/\/audio_\d/i.test(i.anexo_url || '') || /\.(webm|ogg|mp3|m4a|wav|aac|opus)(\?|$)/i.test(nomeOuUrl));
     const anexoHtml = i.anexo_url
       ? (anexoImg
           ? `<a href="${i.anexo_url}" target="_blank" rel="noopener"><img class="chat-anexo-img" src="${i.anexo_url}" alt="anexo"/></a>`
-          : anexoAudio
-            ? `<audio controls src="${i.anexo_url}">Seu navegador não suporta áudio embutido.</audio>`
-            : `<div style="margin-top:6px;"><a href="${i.anexo_url}" target="_blank" rel="noopener">📎 ${escapeHtml(i.anexo_nome||'Ver anexo')}</a></div>`)
+          : anexoVideo
+            ? `<video controls src="${i.anexo_url}">Seu navegador não suporta vídeo embutido.</video>`
+            : anexoAudio
+              ? `<audio controls src="${i.anexo_url}">Seu navegador não suporta áudio embutido.</audio>`
+              : `<div style="margin-top:6px;"><a href="${i.anexo_url}" target="_blank" rel="noopener">📎 ${escapeHtml(i.anexo_nome||'Ver anexo')}</a></div>`)
       : '';
 
     // status de entrega (só existe para mensagens enviadas pela API — ver
@@ -4327,9 +4342,11 @@ async function abrirDetalhe(id){
         <label class="chat-toggle-nota">
           <input type="checkbox" id="chat-toggle-nota-input"/> Nota interna (não é enviada ao cliente)
         </label>
-        <div style="display:flex;gap:8px;align-items:center;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button type="button" class="btn btn-ghost btn-sm" id="btn-chat-toggle-anexo" style="font-size:12px;">📎 Anexar arquivo</button>
           ${usaApiNesteAtendimento ? `<button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-chat-gravar-audio" title="Gravar e enviar mensagem de voz">🎤</button>` : ''}
+          ${usaApiNesteAtendimento ? `<button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-chat-gravar-video" title="Gravar e enviar vídeo">🎥</button>` : ''}
+          ${usaApiNesteAtendimento ? `<button type="button" class="btn btn-ghost btn-sm" id="btn-chat-anexar-video" title="Anexar vídeo já gravado" style="font-size:12px;">📹 Anexar vídeo</button>` : ''}
           <button type="button" class="btn btn-whatsapp btn-sm" id="btn-chat-enviar">Enviar</button>
         </div>
       </div>
@@ -4376,8 +4393,10 @@ async function abrirDetalhe(id){
     }
   });
 
-  // ---- gravação e envio de mensagem de voz (só linhas já na API) ----
+  // ---- gravação e envio de mensagem de voz/vídeo (só linhas já na API) ----
   $('#btn-chat-gravar-audio')?.addEventListener('click', ()=> alternarGravacaoAudio(atendimento));
+  $('#btn-chat-gravar-video')?.addEventListener('click', ()=> alternarGravacaoVideo(atendimento));
+  $('#btn-chat-anexar-video')?.addEventListener('click', ()=> anexarVideoComposer(atendimento));
 
   // ---- anexo (compacto, some por padrão; útil sobretudo em linhas ainda
   // manuais, onde a mídia não chega sozinha pela API) ----
@@ -4396,35 +4415,34 @@ async function abrirDetalhe(id){
 // pontos de envio da aplicação.
 // Traduz os erros mais comuns que a Meta devolve para uma linguagem que
 // faz sentido pra quem está atendendo, em vez do JSON cru da API.
-// ---------------- MENSAGEM DE VOZ ----------------
-// Gravação genérica e reutilizável — usada pelo compositor da Janela de
-// Conversa e, agora, também nas telas de criação de protocolo (Novo
-// Atendimento, Volume de Testes) e na Transferência, sempre que fizer
-// sentido enviar um áudio complementar pela API (ver Mudanças de Cobrança
-// da Meta 2026, capítulo 6). Só uma gravação por vez, não importa o botão.
+// ---------------- MÍDIA (ÁUDIO E VÍDEO) ----------------
+// Compartilhada pelo compositor da Janela de Conversa e pelas telas de
+// Novo Atendimento, Volume de Testes e Transferência. Grava (câmera ou
+// microfone do navegador) ou aceita um arquivo de vídeo já existente —
+// em nenhum dos casos envia sozinho: sempre mostra uma prévia com um
+// botão "Enviar" explícito, para nunca mandar nada só por parar de
+// gravar. Só uma gravação por vez, não importa o botão.
 let gravadorAtivo = null;
-let audioTransferenciaBlob = null; // guardado entre a gravação e a confirmação do envio, no formulário de Transferir/Reenviar
 
-function alternarGravacaoGenerica(btnEl, aoFinalizar){
+function iniciarOuPararGravacao(btnEl, tipo, aoConfirmarEnvio){
   if(gravadorAtivo && gravadorAtivo.state === 'recording'){
     gravadorAtivo.stop();
     return;
   }
   if(gravadorAtivo) return; // já existe uma gravação em andamento em outro botão
   if(!navigator.mediaDevices?.getUserMedia){
-    toast('Este navegador não tem suporte a gravação de áudio.');
+    toast('Este navegador não tem suporte a gravação.');
     return;
   }
-  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream=>{
+  const constraints = tipo === 'video' ? { audio: true, video: { facingMode: 'environment' } } : { audio: true };
+  navigator.mediaDevices.getUserMedia(constraints).then(stream=>{
     const textoOriginalBtn = btnEl ? btnEl.textContent : '';
     const chunks = [];
     const rec = new MediaRecorder(stream);
     rec.addEventListener('dataavailable', (e)=>{ if(e.data && e.data.size > 0) chunks.push(e.data); });
 
-    // indicador visível de gravação — uma pílula vermelha com ponto
-    // pulsante e cronômetro ao vivo, inserida logo ao lado do botão. Bem
-    // mais chamativo do que só a cor do próprio botão mudar, que passava
-    // despercebido.
+    // indicador visível de gravação — pílula vermelha com ponto pulsante
+    // e cronômetro ao vivo, bem mais chamativo do que só a cor do botão.
     let indicador = null, timerCronometro = null;
     if(btnEl){
       indicador = document.createElement('span');
@@ -4441,65 +4459,130 @@ function alternarGravacaoGenerica(btnEl, aoFinalizar){
     }
 
     rec.addEventListener('stop', ()=>{
-      stream.getTracks().forEach(t => t.stop()); // libera o microfone
+      stream.getTracks().forEach(t => t.stop()); // libera câmera/microfone
       gravadorAtivo = null;
       if(timerCronometro) clearInterval(timerCronometro);
       if(indicador) indicador.remove();
-      if(btnEl){ btnEl.textContent = textoOriginalBtn; btnEl.classList.remove('gravando'); btnEl.title = 'Gravar áudio'; }
-      const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
-      aoFinalizar(blob);
+      if(btnEl){ btnEl.textContent = textoOriginalBtn; btnEl.classList.remove('gravando'); btnEl.title = tipo === 'video' ? 'Gravar vídeo' : 'Gravar áudio'; }
+      const blob = new Blob(chunks, { type: rec.mimeType || (tipo === 'video' ? 'video/webm' : 'audio/webm') });
+      mostrarPreviaMidia(btnEl, tipo, blob, aoConfirmarEnvio);
     });
     rec.start();
     gravadorAtivo = rec;
-    if(btnEl){ btnEl.textContent = '⏹ Parar gravação'; btnEl.classList.add('gravando'); btnEl.title = 'Gravando… clique para parar e enviar'; }
+    if(btnEl){ btnEl.textContent = '⏹ Parar gravação'; btnEl.classList.add('gravando'); btnEl.title = 'Gravando… clique para parar'; }
   }).catch(err=>{
-    console.error('[audio] erro ao acessar microfone:', err);
-    toast('Não foi possível acessar o microfone — confira a permissão do navegador.');
+    console.error('[midia] erro ao acessar câmera/microfone:', err);
+    toast(tipo === 'video' ? 'Não foi possível acessar a câmera — confira a permissão do navegador.' : 'Não foi possível acessar o microfone — confira a permissão do navegador.');
   });
 }
 
-// Sobe o áudio já gravado para o mesmo bucket usado por todos os anexos —
-// só prepara o arquivo e devolve a URL pública; quem chama decide como
-// enviar (composer da conversa, confirmação de criação, transferência…).
-async function uploadAudioGravado(blob, pastaId){
-  if(blob.size < 800) throw new Error('Gravação muito curta — tente de novo.');
-  const extensao = (blob.type.split('/')[1] || 'webm').split(';')[0];
-  const caminho = `${pastaId}/audio_${Date.now()}.${extensao}`;
-  const { error } = await sb.storage.from('evidencias').upload(caminho, blob, { contentType: blob.type });
+// Prévia com confirmação — nada é enviado até o técnico clicar em
+// "Enviar" aqui; "Descartar" cancela sem deixar rastro.
+function mostrarPreviaMidia(btnEl, tipo, blob, aoConfirmarEnvio){
+  if(blob.size < 800){ toast('Gravação muito curta — tente de novo.'); return; }
+  const url = URL.createObjectURL(blob);
+  const previa = document.createElement('div');
+  previa.className = 'previa-midia';
+  previa.innerHTML = `
+    ${tipo === 'video' ? `<video controls src="${url}"></video>` : `<audio controls src="${url}"></audio>`}
+    <div class="previa-midia-acoes">
+      <button type="button" class="btn btn-whatsapp btn-sm btn-previa-enviar">Enviar</button>
+      <button type="button" class="btn btn-ghost btn-sm btn-previa-descartar">Descartar</button>
+    </div>
+  `;
+  (btnEl || document.body).insertAdjacentElement('afterend', previa);
+  previa.querySelector('.btn-previa-enviar').addEventListener('click', ()=>{
+    previa.remove();
+    URL.revokeObjectURL(url);
+    aoConfirmarEnvio(blob);
+  });
+  previa.querySelector('.btn-previa-descartar').addEventListener('click', ()=>{
+    previa.remove();
+    URL.revokeObjectURL(url);
+  });
+}
+
+// Anexar um vídeo já existente (em vez de gravar na hora) — mesma prévia
+// com confirmação antes de enviar.
+function anexarArquivoVideo(btnEl, aoConfirmarEnvio){
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'video/*';
+  input.addEventListener('change', ()=>{
+    const arquivo = input.files[0];
+    if(arquivo) mostrarPreviaMidia(btnEl, 'video', arquivo, aoConfirmarEnvio);
+  });
+  input.click();
+}
+
+// Sobe a mídia já confirmada para o mesmo bucket usado por todos os
+// anexos — só prepara o arquivo e devolve a URL pública.
+async function uploadMidiaGravada(blob, pastaId, tipo){
+  const contentType = blob.type || (tipo === 'video' ? 'video/webm' : 'audio/webm');
+  const extensao = (contentType.split('/')[1] || 'webm').split(';')[0];
+  const caminho = `${pastaId}/${tipo}_${Date.now()}.${extensao}`;
+  const { error } = await sb.storage.from('evidencias').upload(caminho, blob, { contentType });
   if(error) throw error;
   const { data: pub } = sb.storage.from('evidencias').getPublicUrl(caminho);
   return pub.publicUrl;
 }
 
+// Envia a mídia já confirmada (depois do clique em "Enviar" na prévia) —
+// função única reaproveitada nos quatro pontos (compositor, Novo
+// Atendimento, Volume de Testes, Transferir).
+async function enviarMidiaConfirmada({ atendimentoId, telefone, tipo, blob, aposEnviar }){
+  toast(tipo === 'video' ? 'Enviando vídeo…' : 'Enviando áudio…');
+  try{
+    const url = await uploadMidiaGravada(blob, atendimentoId, tipo);
+    await enviarViaWhatsAppApi({
+      atendimentoId, telefone, agenteId: currentAgente.id,
+      ...(tipo === 'video' ? { videoUrl: url } : { audioUrl: url })
+    });
+    toast(tipo === 'video' ? 'Vídeo enviado.' : 'Áudio enviado.');
+    if(aposEnviar) await aposEnviar();
+  }catch(err){
+    console.error('[midia] erro ao enviar:', err);
+    mostrarAvisoModal('Não foi possível enviar: '+traduzirErroWhatsApp(err?.message || err));
+  }
+}
+
+let audioTransferenciaBlob = null; // guardado entre a confirmação da prévia e o envio, no formulário de Transferir/Reenviar
+let videoTransferenciaBlob = null; // idem, para vídeo
+
 async function alternarGravacaoAudio(atendimento){
   const btn = $('#btn-chat-gravar-audio');
   if(!btn) return;
-  alternarGravacaoGenerica(btn, (blob)=> enviarAudioGravado(atendimento, blob));
+  const usaApi = atendimento.canal === 'whatsapp_api' || linhaTemApiAtiva(atendimento.linha_id);
+  if(!usaApi){ toast('Envio de áudio só está disponível em linhas já conectadas à API.'); return; }
+  iniciarOuPararGravacao(btn, 'audio', (blob)=> enviarMidiaComposer(atendimento, 'audio', blob));
 }
 
-async function enviarAudioGravado(atendimento, blob){
+async function alternarGravacaoVideo(atendimento){
+  const btn = $('#btn-chat-gravar-video');
+  if(!btn) return;
   const usaApi = atendimento.canal === 'whatsapp_api' || linhaTemApiAtiva(atendimento.linha_id);
-  if(!usaApi){
-    toast('Envio de áudio só está disponível em linhas já conectadas à API.');
-    return;
-  }
-  toast('Enviando áudio…');
-  try{
-    const url = await uploadAudioGravado(blob, atendimento.id);
-    await enviarViaWhatsAppApi({
-      atendimentoId: atendimento.id, telefone: atendimento.cliente_telefone,
-      audioUrl: url, agenteId: currentAgente.id
-    });
-    if(atendimento.status === 'aberto'){
-      await sb.from('atendimentos').update({status:'em_andamento'}).eq('id', atendimento.id);
+  if(!usaApi){ toast('Envio de vídeo só está disponível em linhas já conectadas à API.'); return; }
+  iniciarOuPararGravacao(btn, 'video', (blob)=> enviarMidiaComposer(atendimento, 'video', blob));
+}
+
+function anexarVideoComposer(atendimento){
+  const usaApi = atendimento.canal === 'whatsapp_api' || linhaTemApiAtiva(atendimento.linha_id);
+  if(!usaApi){ toast('Envio de vídeo só está disponível em linhas já conectadas à API.'); return; }
+  const btn = $('#btn-chat-anexar-video');
+  anexarArquivoVideo(btn, (blob)=> enviarMidiaComposer(atendimento, 'video', blob));
+}
+
+async function enviarMidiaComposer(atendimento, tipo, blob){
+  await enviarMidiaConfirmada({
+    atendimentoId: atendimento.id, telefone: atendimento.cliente_telefone, tipo, blob,
+    aposEnviar: async ()=>{
+      if(atendimento.status === 'aberto'){
+        await sb.from('atendimentos').update({status:'em_andamento'}).eq('id', atendimento.id);
+      }
+      abrirDetalhe(atendimento.id);
+      atualizarListaAtivaEmSegundoPlano();
     }
-    toast('Áudio enviado.');
-    abrirDetalhe(atendimento.id);
-    atualizarListaAtivaEmSegundoPlano();
-  }catch(err){
-    console.error('[audio] erro ao enviar:', err);
-    mostrarAvisoModal('Não foi possível enviar o áudio: '+traduzirErroWhatsApp(err?.message || err));
-  }
+  });
 }
 
 function traduzirErroWhatsApp(mensagemErro){
@@ -4725,9 +4808,13 @@ function mostrarFormularioEnvio(atendimento, interacoes, modo){
       <p class="hint">Foto, PDF etc. — um link para o arquivo é incluído na mensagem enviada.</p>
     </div>
     ${usaApiEnvio ? `<div class="field">
-      <label>Áudio complementar (opcional)</label>
-      <button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-dest-gravar-audio">🎤 Gravar áudio</button>
-      <span class="hint" id="dest-audio-status" style="margin-left:8px;"></span>
+      <label>Áudio/vídeo complementar (opcional)</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-dest-gravar-audio">🎤 Áudio</button>
+        <button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-dest-gravar-video">🎥 Vídeo</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-dest-anexar-video">📹 Anexar vídeo</button>
+      </div>
+      <span class="hint" id="dest-audio-status" style="display:block;margin-top:6px;"></span>
       <p class="hint" style="margin-top:6px;">Enviado como uma segunda mensagem, logo após o resumo em texto.</p>
     </div>` : ''}
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:16px;cursor:pointer;">
@@ -4757,14 +4844,27 @@ function mostrarFormularioEnvio(atendimento, interacoes, modo){
   $('#btn-cancelar-envio').addEventListener('click', ()=> abrirDetalhe(atendimento.id));
   $('#btn-confirmar-envio').addEventListener('click', ()=> confirmarEnvio(atendimento, interacoes, modo));
 
-  // áudio complementar — grava e guarda o blob; o upload/envio de verdade
-  // só acontece dentro de confirmarEnvio, junto com o restante do envio,
-  // para não mandar nada antes de o técnico confirmar tudo.
+  // áudio/vídeo complementar — grava (com prévia de confirmação já
+  // embutida em iniciarOuPararGravacao) e guarda o blob resultante; o
+  // upload/envio de verdade só acontece dentro de confirmarEnvio, junto
+  // com o restante do envio, para não mandar nada antes de o técnico
+  // confirmar tudo.
   audioTransferenciaBlob = null;
+  videoTransferenciaBlob = null;
   const btnAudioDest = $('#btn-dest-gravar-audio');
-  btnAudioDest?.addEventListener('click', ()=> alternarGravacaoGenerica(btnAudioDest, (blob)=>{
+  btnAudioDest?.addEventListener('click', ()=> iniciarOuPararGravacao(btnAudioDest, 'audio', (blob)=>{
     audioTransferenciaBlob = blob;
     $('#dest-audio-status').textContent = '✓ Áudio gravado — será enviado junto.';
+  }));
+  const btnVideoDest = $('#btn-dest-gravar-video');
+  btnVideoDest?.addEventListener('click', ()=> iniciarOuPararGravacao(btnVideoDest, 'video', (blob)=>{
+    videoTransferenciaBlob = blob;
+    $('#dest-audio-status').textContent = '✓ Vídeo gravado — será enviado junto.';
+  }));
+  const btnAnexarVideoDest = $('#btn-dest-anexar-video');
+  btnAnexarVideoDest?.addEventListener('click', ()=> anexarArquivoVideo(btnAnexarVideoDest, (blob)=>{
+    videoTransferenciaBlob = blob;
+    $('#dest-audio-status').textContent = '✓ Vídeo anexado — será enviado junto.';
   }));
 }
 
@@ -4830,19 +4930,30 @@ async function confirmarEnvio(atendimento, interacoes, modo){
         toast('Registrado, mas o envio automático falhou: '+errEnvio.message);
       }
 
-      // áudio complementar, se foi gravado — sai como uma SEGUNDA
-      // mensagem, logo após o resumo em texto, nunca no lugar dele (o
-      // resumo carrega contexto estruturado que vale sempre preservar).
+      // áudio/vídeo complementar, se foram gravados — saem como
+      // mensagens SEGUINTES, logo após o resumo em texto, nunca no lugar
+      // dele (o resumo carrega contexto estruturado que vale preservar).
       if(audioTransferenciaBlob){
         try{
           status.textContent = 'Enviando áudio complementar…';
-          const urlAudio = await uploadAudioGravado(audioTransferenciaBlob, atendimento.id);
+          const urlAudio = await uploadMidiaGravada(audioTransferenciaBlob, atendimento.id, 'audio');
           await enviarViaWhatsAppApi({ atendimentoId: atendimento.id, telefone, audioUrl: urlAudio, agenteId: currentAgente.id });
         }catch(errAudio){
           console.error('[confirmar-envio] falha ao enviar áudio complementar:', errAudio);
           toast('Resumo enviado, mas o áudio complementar falhou: '+(errAudio?.message || errAudio));
         }
         audioTransferenciaBlob = null;
+      }
+      if(videoTransferenciaBlob){
+        try{
+          status.textContent = 'Enviando vídeo complementar…';
+          const urlVideo = await uploadMidiaGravada(videoTransferenciaBlob, atendimento.id, 'video');
+          await enviarViaWhatsAppApi({ atendimentoId: atendimento.id, telefone, videoUrl: urlVideo, agenteId: currentAgente.id });
+        }catch(errVideo){
+          console.error('[confirmar-envio] falha ao enviar vídeo complementar:', errVideo);
+          toast('Resumo enviado, mas o vídeo complementar falhou: '+(errVideo?.message || errVideo));
+        }
+        videoTransferenciaBlob = null;
       }
 
       await sb.from('interacoes').insert({
