@@ -180,6 +180,9 @@
   .btn-block{width:100%;}
   .btn-danger-ghost{background:var(--danger-light);color:var(--danger);}
   .btn-sm{padding:7px 12px;font-size:12.5px;}
+  /* botões de microfone: ícone maior, mais destacado que um botão
+     secundário comum — é uma ação diferente de "cancelar"/"anexar" */
+  .btn-mic{font-size:17px;padding:7px 15px;line-height:1;}
   .btn:disabled{opacity:.55;cursor:not-allowed;}
   .error-msg{background:var(--danger-light);color:var(--danger);font-size:13px;padding:9px 12px;border-radius:var(--radius-sm);margin-bottom:14px;display:none;}
   .info-msg{background:var(--info-light);color:var(--info);font-size:13px;padding:9px 12px;border-radius:var(--radius-sm);margin-bottom:14px;}
@@ -424,9 +427,14 @@
   .chat-composer textarea{border:none;background:transparent;resize:vertical;font-family:inherit;font-size:13.5px;color:var(--input-text);min-height:56px;outline:none;}
   .chat-composer-linha{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
   .chat-toggle-nota{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-muted);cursor:pointer;user-select:none;}
-  #btn-chat-gravar-audio.gravando{background:var(--danger);color:#fff;border-color:var(--danger);animation:pulsar-gravacao 1.2s ease-in-out infinite;}
+  #btn-chat-gravar-audio.gravando, .btn-mic.gravando{background:var(--danger);color:#fff;border-color:var(--danger);animation:pulsar-gravacao 1.2s ease-in-out infinite;}
   @keyframes pulsar-gravacao{0%,100%{opacity:1;}50%{opacity:.55;}}
   .chat-bubble audio{max-width:220px;height:34px;display:block;margin-top:4px;}
+  /* indicador de gravação — bem mais visível do que só a cor do botão
+     mudar: pílula vermelha com ponto pulsante e cronômetro ao vivo,
+     inserida ao lado de qualquer botão de áudio enquanto grava. */
+  .indicador-gravacao{display:inline-flex;align-items:center;gap:7px;margin-left:10px;padding:5px 12px;border-radius:20px;background:var(--danger);color:#fff;font-size:12.5px;font-weight:700;vertical-align:middle;}
+  .ponto-gravacao{width:9px;height:9px;border-radius:50%;background:#fff;animation:pulsar-gravacao 1s ease-in-out infinite;flex-shrink:0;}
 
   /* Fundo sempre escuro (var(--sidebar-bg) é quase preto nos dois temas)
      com texto sempre branco — antes usava var(--text) como fundo, que no
@@ -4321,7 +4329,7 @@ async function abrirDetalhe(id){
         </label>
         <div style="display:flex;gap:8px;align-items:center;">
           <button type="button" class="btn btn-ghost btn-sm" id="btn-chat-toggle-anexo" style="font-size:12px;">📎 Anexar arquivo</button>
-          ${usaApiNesteAtendimento ? `<button type="button" class="btn btn-ghost btn-sm" id="btn-chat-gravar-audio" title="Gravar e enviar mensagem de voz">🎤</button>` : ''}
+          ${usaApiNesteAtendimento ? `<button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-chat-gravar-audio" title="Gravar e enviar mensagem de voz">🎤</button>` : ''}
           <button type="button" class="btn btn-whatsapp btn-sm" id="btn-chat-enviar">Enviar</button>
         </div>
       </div>
@@ -4408,19 +4416,42 @@ function alternarGravacaoGenerica(btnEl, aoFinalizar){
     return;
   }
   navigator.mediaDevices.getUserMedia({ audio: true }).then(stream=>{
+    const textoOriginalBtn = btnEl ? btnEl.textContent : '';
     const chunks = [];
     const rec = new MediaRecorder(stream);
     rec.addEventListener('dataavailable', (e)=>{ if(e.data && e.data.size > 0) chunks.push(e.data); });
+
+    // indicador visível de gravação — uma pílula vermelha com ponto
+    // pulsante e cronômetro ao vivo, inserida logo ao lado do botão. Bem
+    // mais chamativo do que só a cor do próprio botão mudar, que passava
+    // despercebido.
+    let indicador = null, timerCronometro = null;
+    if(btnEl){
+      indicador = document.createElement('span');
+      indicador.className = 'indicador-gravacao';
+      indicador.innerHTML = '<span class="ponto-gravacao"></span> Gravando… <span class="cronometro-gravacao">0:00</span>';
+      btnEl.insertAdjacentElement('afterend', indicador);
+      const inicio = Date.now();
+      timerCronometro = setInterval(()=>{
+        const seg = Math.floor((Date.now()-inicio)/1000);
+        const mm = Math.floor(seg/60), ss = String(seg%60).padStart(2,'0');
+        const elCron = indicador.querySelector('.cronometro-gravacao');
+        if(elCron) elCron.textContent = `${mm}:${ss}`;
+      }, 500);
+    }
+
     rec.addEventListener('stop', ()=>{
       stream.getTracks().forEach(t => t.stop()); // libera o microfone
       gravadorAtivo = null;
-      if(btnEl){ btnEl.textContent = '🎤'; btnEl.classList.remove('gravando'); btnEl.title = 'Gravar áudio'; }
+      if(timerCronometro) clearInterval(timerCronometro);
+      if(indicador) indicador.remove();
+      if(btnEl){ btnEl.textContent = textoOriginalBtn; btnEl.classList.remove('gravando'); btnEl.title = 'Gravar áudio'; }
       const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
       aoFinalizar(blob);
     });
     rec.start();
     gravadorAtivo = rec;
-    if(btnEl){ btnEl.textContent = '⏹'; btnEl.classList.add('gravando'); btnEl.title = 'Gravando… clique para parar e enviar'; }
+    if(btnEl){ btnEl.textContent = '⏹ Parar gravação'; btnEl.classList.add('gravando'); btnEl.title = 'Gravando… clique para parar e enviar'; }
   }).catch(err=>{
     console.error('[audio] erro ao acessar microfone:', err);
     toast('Não foi possível acessar o microfone — confira a permissão do navegador.');
@@ -4695,7 +4726,7 @@ function mostrarFormularioEnvio(atendimento, interacoes, modo){
     </div>
     ${usaApiEnvio ? `<div class="field">
       <label>Áudio complementar (opcional)</label>
-      <button type="button" class="btn btn-ghost btn-sm" id="btn-dest-gravar-audio">🎤 Gravar áudio</button>
+      <button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-dest-gravar-audio">🎤 Gravar áudio</button>
       <span class="hint" id="dest-audio-status" style="margin-left:8px;"></span>
       <p class="hint" style="margin-top:6px;">Enviado como uma segunda mensagem, logo após o resumo em texto.</p>
     </div>` : ''}
