@@ -290,6 +290,7 @@
     .shell{grid-template-columns:1fr;}
     .masthead{display:none;}
     .sidebar{top:0;height:100vh;}
+    .chat-bubble{max-width:84%;}
     .mobile-topbar{
       display:flex;align-items:center;gap:12px;padding:14px 16px;
       background:linear-gradient(180deg,var(--sidebar-bg-2),var(--sidebar-bg));position:sticky;top:0;z-index:40;
@@ -410,7 +411,7 @@
      verdade dentro da aplicação. Para canal = 'manual', nada disso é
      usado — o histórico continua no formato de lista já existente. */
   .chat-wrap{display:flex;flex-direction:column;max-height:440px;overflow-y:auto;padding:10px 8px;margin-bottom:14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);}
-  .chat-bubble{max-width:78%;padding:9px 13px;border-radius:14px;margin:4px 0;font-size:13.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word;}
+  .chat-bubble{max-width:min(60%, 440px);padding:8px 12px;border-radius:14px;margin:3px 0;font-size:13.5px;line-height:1.42;white-space:pre-wrap;word-break:break-word;}
   .chat-bubble.agente{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:4px;}
   .chat-bubble.cliente{align-self:flex-start;background:var(--surface);border:1px solid var(--border);color:var(--text);border-bottom-left-radius:4px;}
   .chat-bubble .chat-meta{font-size:10.5px;opacity:.75;margin-top:5px;}
@@ -423,6 +424,9 @@
   .chat-composer textarea{border:none;background:transparent;resize:vertical;font-family:inherit;font-size:13.5px;color:var(--input-text);min-height:56px;outline:none;}
   .chat-composer-linha{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
   .chat-toggle-nota{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-muted);cursor:pointer;user-select:none;}
+  #btn-chat-gravar-audio.gravando{background:var(--danger);color:#fff;border-color:var(--danger);animation:pulsar-gravacao 1.2s ease-in-out infinite;}
+  @keyframes pulsar-gravacao{0%,100%{opacity:1;}50%{opacity:.55;}}
+  .chat-bubble audio{max-width:220px;height:34px;display:block;margin-top:4px;}
 
   /* Fundo sempre escuro (var(--sidebar-bg) é quase preto nos dois temas)
      com texto sempre branco — antes usava var(--text) como fundo, que no
@@ -1546,15 +1550,19 @@ function linhaTemApiAtiva(linhaId){
 // a aplicação NÃO deve inserir a interação de novo (ver os pontos de chamada
 // em "Novo Atendimento", "Solicitar Volume de Testes", "Salvar e enviar" e
 // "Transferir/Reenviar").
-async function enviarViaWhatsAppApi({ atendimentoId, telefone, texto, agenteId }){
+async function enviarViaWhatsAppApi({ atendimentoId, telefone, texto, agenteId, audioUrl }){
   const { data: sessao } = await sb.auth.getSession();
   const token = sessao?.session?.access_token;
   if(!token) throw new Error('Sessão expirada — faça login novamente.');
 
+  const corpo = { atendimento_id: atendimentoId, telefone, agente_id: agenteId ?? null };
+  if(audioUrl){ corpo.tipo = 'audio'; corpo.audio_url = audioUrl; }
+  else{ corpo.texto = texto; }
+
   const resp = await fetch(`${supabaseUrlGlobal}/functions/v1/whatsapp-enviar`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body: JSON.stringify({ atendimento_id: atendimentoId, telefone, texto, agente_id: agenteId ?? null })
+    body: JSON.stringify(corpo)
   });
   const resultado = await resp.json().catch(()=> ({}));
   if(!resp.ok || !resultado?.sucesso){
@@ -4136,10 +4144,13 @@ function renderJanelaConversa(interacoes, statusPorInteracao){
     // empresa (agente ou o envio automático do sistema, sem agente_id).
     const doCliente = i.tipo === 'mensagem_recebida';
     const anexoImg = /\.(png|jpe?g|gif|webp)(\?|$)/i.test(i.anexo_nome || i.anexo_url || '');
+    const anexoAudio = /\.(webm|ogg|mp3|m4a|wav|aac|opus)(\?|$)/i.test(i.anexo_nome || i.anexo_url || '');
     const anexoHtml = i.anexo_url
       ? (anexoImg
           ? `<a href="${i.anexo_url}" target="_blank" rel="noopener"><img class="chat-anexo-img" src="${i.anexo_url}" alt="anexo"/></a>`
-          : `<div style="margin-top:6px;"><a href="${i.anexo_url}" target="_blank" rel="noopener">📎 ${escapeHtml(i.anexo_nome||'Ver anexo')}</a></div>`)
+          : anexoAudio
+            ? `<audio controls src="${i.anexo_url}">Seu navegador não suporta áudio embutido.</audio>`
+            : `<div style="margin-top:6px;"><a href="${i.anexo_url}" target="_blank" rel="noopener">📎 ${escapeHtml(i.anexo_nome||'Ver anexo')}</a></div>`)
       : '';
 
     // status de entrega (só existe para mensagens enviadas pela API — ver
@@ -4178,6 +4189,12 @@ async function abrirDetalhe(id){
   ]);
 
   if(!atendimento){ $('#modal-body').innerHTML = '<p class="hint">Atendimento não encontrado.</p>'; return; }
+
+  // usado tanto pelo compositor de texto (já existente) quanto pelo botão
+  // de áudio novo — gravar e enviar voz só faz sentido quando a linha já
+  // está conectada à API; no modo manual não há como anexar áudio a um
+  // link do WhatsApp.
+  const usaApiNesteAtendimento = atendimento.canal === 'whatsapp_api' || linhaTemApiAtiva(atendimento.linha_id);
 
   // sempre volta o rótulo padrão aqui — sem isso, um rótulo trocado por
   // uma ação específica (Encerrar/Transferir/Reenviar) ficava "grudado"
@@ -4251,6 +4268,7 @@ async function abrirDetalhe(id){
         </label>
         <div style="display:flex;gap:8px;align-items:center;">
           <button type="button" class="btn btn-ghost btn-sm" id="btn-chat-toggle-anexo" style="font-size:12px;">📎 Anexar arquivo</button>
+          ${usaApiNesteAtendimento ? `<button type="button" class="btn btn-ghost btn-sm" id="btn-chat-gravar-audio" title="Gravar e enviar mensagem de voz">🎤</button>` : ''}
           <button type="button" class="btn btn-whatsapp btn-sm" id="btn-chat-enviar">Enviar</button>
         </div>
       </div>
@@ -4297,6 +4315,9 @@ async function abrirDetalhe(id){
     }
   });
 
+  // ---- gravação e envio de mensagem de voz (só linhas já na API) ----
+  $('#btn-chat-gravar-audio')?.addEventListener('click', ()=> alternarGravacaoAudio(atendimento));
+
   // ---- anexo (compacto, some por padrão; útil sobretudo em linhas ainda
   // manuais, onde a mídia não chega sozinha pela API) ----
   $('#btn-chat-toggle-anexo').addEventListener('click', ()=>{
@@ -4314,6 +4335,91 @@ async function abrirDetalhe(id){
 // pontos de envio da aplicação.
 // Traduz os erros mais comuns que a Meta devolve para uma linguagem que
 // faz sentido pra quem está atendendo, em vez do JSON cru da API.
+// ---------------- MENSAGEM DE VOZ ----------------
+// Grava pelo microfone do navegador (MediaRecorder, nativo — não exige
+// nenhuma instalação) e envia como áudio comum pela API (ver Mudanças de
+// Cobrança da Meta 2026, capítulo 6 — começamos pelo formato mais simples,
+// sem a conversão que uma "nota de voz nativa" exigiria).
+let mediaRecorderAtual = null;
+let audioChunksAtual = [];
+let gravandoAudio = false;
+
+async function alternarGravacaoAudio(atendimento){
+  const btn = $('#btn-chat-gravar-audio');
+  if(!btn) return;
+
+  if(!gravandoAudio){
+    if(!navigator.mediaDevices?.getUserMedia){
+      toast('Este navegador não tem suporte a gravação de áudio.');
+      return;
+    }
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksAtual = [];
+      mediaRecorderAtual = new MediaRecorder(stream);
+      mediaRecorderAtual.addEventListener('dataavailable', (e)=>{
+        if(e.data && e.data.size > 0) audioChunksAtual.push(e.data);
+      });
+      mediaRecorderAtual.addEventListener('stop', ()=>{
+        stream.getTracks().forEach(t => t.stop()); // libera o microfone
+        enviarAudioGravado(atendimento);
+      });
+      mediaRecorderAtual.start();
+      gravandoAudio = true;
+      btn.textContent = '⏹';
+      btn.classList.add('gravando');
+      btn.title = 'Gravando… clique para parar e enviar';
+    }catch(err){
+      console.error('[audio] erro ao acessar microfone:', err);
+      toast('Não foi possível acessar o microfone — confira a permissão do navegador.');
+    }
+  }else{
+    mediaRecorderAtual.stop();
+    gravandoAudio = false;
+    btn.textContent = '🎤';
+    btn.classList.remove('gravando');
+    btn.title = 'Gravar e enviar mensagem de voz';
+  }
+}
+
+async function enviarAudioGravado(atendimento){
+  const usaApi = atendimento.canal === 'whatsapp_api' || linhaTemApiAtiva(atendimento.linha_id);
+  if(!usaApi){
+    toast('Envio de áudio só está disponível em linhas já conectadas à API.');
+    return;
+  }
+  const blob = new Blob(audioChunksAtual, { type: mediaRecorderAtual?.mimeType || 'audio/webm' });
+  if(blob.size < 800){
+    toast('Gravação muito curta — tente de novo.');
+    return;
+  }
+
+  toast('Enviando áudio…');
+  try{
+    const extensao = (blob.type.split('/')[1] || 'webm').split(';')[0];
+    const caminho = `${atendimento.id}/audio_${Date.now()}.${extensao}`;
+    const { error: upErr } = await sb.storage.from('evidencias').upload(caminho, blob, { contentType: blob.type });
+    if(upErr){ toast('Erro ao enviar áudio: '+upErr.message); return; }
+
+    const { data: pub } = sb.storage.from('evidencias').getPublicUrl(caminho);
+
+    await enviarViaWhatsAppApi({
+      atendimentoId: atendimento.id, telefone: atendimento.cliente_telefone,
+      audioUrl: pub.publicUrl, agenteId: currentAgente.id
+    });
+
+    if(atendimento.status === 'aberto'){
+      await sb.from('atendimentos').update({status:'em_andamento'}).eq('id', atendimento.id);
+    }
+    toast('Áudio enviado.');
+    abrirDetalhe(atendimento.id);
+    atualizarListaAtivaEmSegundoPlano();
+  }catch(err){
+    console.error('[audio] erro ao enviar:', err);
+    mostrarAvisoModal('Não foi possível enviar o áudio: '+traduzirErroWhatsApp(err?.message || err));
+  }
+}
+
 function traduzirErroWhatsApp(mensagemErro){
   const msg = String(mensagemErro || '');
   if(/131030/.test(msg)) return 'Este número ainda não está na lista de destinatários permitidos (conta em modo de teste) — adicione-o no painel da Meta antes de tentar de novo.';
