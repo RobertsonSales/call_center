@@ -220,6 +220,25 @@
     display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);
   }
 
+  /* ---------- BOTÃO DE TUTORIAL (fixo, canto superior direito) ----------
+     Abre o manual de uso (arquivo/hospedagem separados, ex.: Vercel) numa
+     nova aba. Ver TUTORIAL_URL no bloco de <script> no fim do arquivo —
+     é lá que a URL definitiva deve ser configurada. Fica sempre visível,
+     inclusive na tela de splash e de login, por ser position:fixed fora
+     de qualquer container condicional. */
+  .btn-tutorial-fixo{
+    position:fixed;top:7px;right:62px;z-index:60;height:38px;padding:0 14px;border-radius:19px;
+    border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:12.5px;
+    font-weight:600;display:flex;align-items:center;gap:6px;box-shadow:var(--shadow);cursor:pointer;
+    font-family:'Inter',system-ui,sans-serif;white-space:nowrap;
+  }
+  .btn-tutorial-fixo:hover{border-color:var(--primary);color:var(--primary-dark);}
+  [data-theme="dark"] .btn-tutorial-fixo:hover{color:var(--primary);}
+  @media (max-width:520px){
+    .btn-tutorial-fixo span.rotulo{display:none;}
+    .btn-tutorial-fixo{padding:0;width:38px;justify-content:center;right:56px;}
+  }
+
   /* ---------- MASTHEAD (barra fixa acima do menu e do conteúdo) ----------
      Identidade da empresa e propósito do sistema, sempre visível, acima
      de tudo — inclusive ao rolar a página. Some no mobile, onde o
@@ -458,6 +477,7 @@
 </head>
 <body>
 
+<button class="btn-tutorial-fixo" id="btn-tutorial" title="Abrir manual de uso" aria-label="Abrir manual de uso em nova aba">📘 <span class="rotulo">Tutorial</span></button>
 <button class="theme-toggle" id="theme-toggle" title="Alternar tema claro/escuro" aria-label="Alternar tema claro/escuro">🌙</button>
 
 <!-- ================= SPLASH / ABERTURA ================= -->
@@ -1062,6 +1082,25 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // process.env.SUPABASE_ANON_KEY (configuradas em Project Settings →
 // Environment Variables no Vercel). Veja /api/config.js e o README.
 // =====================================================================
+// =====================================================================
+// TUTORIAL — manual de uso hospedado separadamente (ex.: Vercel), aberto
+// numa nova aba pelo botão "📘 Tutorial" fixo no canto superior direito.
+// Troque a string abaixo pela URL definitiva do deploy (ex.:
+// 'https://labmedic-tutorial.vercel.app' ou a rota específica do manual).
+// Deixe vazia ('') para ocultar o botão automaticamente enquanto a URL
+// não estiver definida.
+// =====================================================================
+const TUTORIAL_URL = ''; // <-- INSIRA AQUI A URL DO VERCEL
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btnTutorial = document.getElementById('btn-tutorial');
+  if (!btnTutorial) return;
+  if (!TUTORIAL_URL) { btnTutorial.style.display = 'none'; return; }
+  btnTutorial.addEventListener('click', () => {
+    window.open(TUTORIAL_URL, '_blank', 'noopener');
+  });
+});
+
 let sb = null;
 let supabaseUrlGlobal = null;
 let currentAgente = null;
