@@ -678,6 +678,8 @@
               <button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-novo-gravar-audio" title="Gravar áudio complementar">🎤 Áudio</button>
               <button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-novo-gravar-video" title="Gravar vídeo complementar">🎥 Vídeo</button>
               <button type="button" class="btn btn-ghost btn-sm" id="btn-novo-anexar-video" title="Anexar vídeo já gravado">📹 Anexar vídeo</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-novo-anexar-documento" title="Enviar documento (PDF, planilha, imagem) ao cliente">📄 Documento</button>
+              <input type="file" id="novo-documento-arquivo" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" style="display:none;"/>
             </div>
             <a class="btn btn-whatsapp btn-block" id="novo-confirmacao-link" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar ao cliente</a>
             <p class="hint" style="margin-bottom:10px;">A conversa continua no WhatsApp real — use o botão abaixo para ir registrando novos procedimentos e observações à medida que forem surgindo, ou para encerrar quando o caso for resolvido.</p>
@@ -740,6 +742,8 @@
               <button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-vt-gravar-audio" title="Gravar áudio complementar">🎤 Áudio</button>
               <button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-vt-gravar-video" title="Gravar vídeo complementar">🎥 Vídeo</button>
               <button type="button" class="btn btn-ghost btn-sm" id="btn-vt-anexar-video" title="Anexar vídeo já gravado">📹 Anexar vídeo</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-vt-anexar-documento" title="Enviar documento (PDF, planilha, imagem) ao colaborador">📄 Documento</button>
+              <input type="file" id="vt-documento-arquivo" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" style="display:none;"/>
             </div>
             <a class="btn btn-whatsapp btn-block" id="vt-confirmacao-link" target="_blank" rel="noopener" style="margin-bottom:10px;text-decoration:none;">📱 Abrir WhatsApp e enviar</a>
             <p class="hint" style="margin-bottom:10px;">Quando o colaborador responder pelo WhatsApp com os números (e a foto/print, se houver), abra este mesmo protocolo para anexar o arquivo recebido.</p>
@@ -1597,6 +1601,10 @@ async function carregarLinhas(){
 // Mantemos os dois caminhos lado a lado de propósito — permite migrar linha
 // por linha, com o modo manual servindo de contingência durante a
 // estabilização, exatamente como recomendado no Plano de Migração.
+// A decisão entre os dois canais é sempre de quem chama (cada tela sabe
+// como calcular seu próprio "usaApi" — ver comentário de
+// enviarMensagemWhatsApp logo abaixo); o que fica centralizado aqui é
+// apenas O QUE FAZER uma vez que essa decisão já foi tomada.
 async function carregarLinhasComApi(){
   const { data, error } = await sb.from('whatsapp_numeros').select('linha_id').eq('ativo', true);
   if(error){ console.error('[whatsapp-api] erro ao carregar linhas com API ativa:', error); return; }
@@ -1613,7 +1621,14 @@ function linhaTemApiAtiva(linhaId){
 // a aplicação NÃO deve inserir a interação de novo (ver os pontos de chamada
 // em "Novo Atendimento", "Solicitar Volume de Testes", "Salvar e enviar" e
 // "Transferir/Reenviar").
-async function enviarViaWhatsAppApi({ atendimentoId, telefone, texto, agenteId, audioUrl, videoUrl }){
+//
+// IMPORTANTE — documento (tipo:'documento'): o parâmetro documentoUrl é novo
+// e exige que a Edge Function whatsapp-enviar (fora deste arquivo, do lado
+// do servidor) também seja atualizada para reconhecer corpo.tipo==='documento'
+// e chamar a Meta com um message type "document" (campo link + filename).
+// Sem esse ajuste no servidor, o envio de documento aqui falha com erro da
+// Edge Function mesmo com o frontend correto — ver nota na documentação.
+async function enviarViaWhatsAppApi({ atendimentoId, telefone, texto, agenteId, audioUrl, videoUrl, documentoUrl, documentoNome }){
   const { data: sessao } = await sb.auth.getSession();
   const token = sessao?.session?.access_token;
   if(!token) throw new Error('Sessão expirada — faça login novamente.');
@@ -1621,6 +1636,7 @@ async function enviarViaWhatsAppApi({ atendimentoId, telefone, texto, agenteId, 
   const corpo = { atendimento_id: atendimentoId, telefone, agente_id: agenteId ?? null };
   if(audioUrl){ corpo.tipo = 'audio'; corpo.audio_url = audioUrl; }
   else if(videoUrl){ corpo.tipo = 'video'; corpo.video_url = videoUrl; }
+  else if(documentoUrl){ corpo.tipo = 'documento'; corpo.documento_url = documentoUrl; corpo.documento_nome = documentoNome || null; }
   else{ corpo.texto = texto; }
 
   const resp = await fetch(`${supabaseUrlGlobal}/functions/v1/whatsapp-enviar`, {
@@ -1633,6 +1649,59 @@ async function enviarViaWhatsAppApi({ atendimentoId, telefone, texto, agenteId, 
     throw new Error(resultado?.erro || 'Falha ao enviar a mensagem pela API do WhatsApp.');
   }
   return resultado;
+}
+
+// -------------------------------------------------------------------
+// Despacho único de mensagem de texto ligada a um atendimento — usado por
+// Novo Atendimento, Solicitar Volume de Testes e o composer da Conversa.
+//
+// Antes desta função, cada uma dessas três telas repetia sua própria cópia
+// do par "tentar enviar pela API / se não, gravar interação e navegar para
+// o link manual", incluindo o try/catch e o insert em `interacoes`. Eram
+// pequenas divergências acumuladas (uma tela gravava destinatario_nome,
+// outra não; os textos de erro eram compostos de formas ligeiramente
+// diferentes) — o tipo de duplicação que tende a piorar a cada nova tela
+// que alguém acrescenta. Esta função concentra esse par de decisões: cada
+// chamador descreve O QUE quer enviar e para quem, e recebe de volta um
+// resultado normalizado ({modo, enviado, erro?}) para decidir o que
+// mostrar na tela — sem precisar conhecer os detalhes de transporte.
+//
+// O parâmetro `usaApi` é sempre calculado pelo chamador, não por esta
+// função: cada tela tem sua própria regra para isso (a maioria usa
+// linhaTemApiAtiva(linha_id); o composer da Conversa também aceita um
+// atendimento já criado como whatsapp_api mesmo que a linha tenha mudado
+// depois — ver enviarComposerConversa). Manter esse cálculo no chamador
+// evita que esta função precise conhecer regras de negócio de cada tela.
+//
+// Pré-requisito quando usaApi for false: a aba do WhatsApp precisa já ter
+// sido aberta de forma síncrona, ainda dentro do clique original (ver
+// abrirAbaWhatsAppSincrono) — esta função só navega essa aba (via
+// navegarAbaWhatsApp), nunca abre uma nova. Em modo API não é preciso
+// abrir nada; pode-se passar null em winWhatsPreAberta.
+async function enviarMensagemWhatsApp({
+  usaApi, atendimentoId, telefone, texto, agenteId = currentAgente.id,
+  destinatarioTelefone = null, destinatarioNome = null, winWhatsPreAberta = null,
+}){
+  if(usaApi){
+    // a Edge Function já grava a interação "mensagem" sozinha — não
+    // duplicamos o insert aqui (ver comentário em enviarViaWhatsAppApi).
+    try{
+      await enviarViaWhatsAppApi({ atendimentoId, telefone, texto, agenteId });
+      return { modo:'api', enviado:true };
+    }catch(erro){
+      console.error('[enviarMensagemWhatsApp] falha ao enviar via API:', erro);
+      return { modo:'api', enviado:false, erro: traduzirErroWhatsApp(erro?.message || erro) };
+    }
+  }
+
+  // modo manual: grava a interação aqui mesmo (não há Edge Function
+  // fazendo isso por nós) e navega a aba já aberta pelo chamador.
+  await sb.from('interacoes').insert({
+    atendimento_id: atendimentoId, agente_id: agenteId, tipo:'mensagem', conteudo: texto,
+    destinatario_telefone: destinatarioTelefone, destinatario_nome: destinatarioNome
+  });
+  navegarAbaWhatsApp(winWhatsPreAberta, telefone, texto);
+  return { modo:'manual', enviado:true };
 }
 
 // Mantém a tela atualizada sozinha quando chegam mensagens/protocolos novos
@@ -2671,21 +2740,14 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
 
     const mensagem = `Olá! 👋\n\nSeu atendimento técnico foi registrado.\nProtocolo: ${data.protocolo}\n${cliente_nome? 'Unidade: '+cliente_nome+'\n':''}${cliente_grupo? 'Cliente: '+cliente_grupo+'\n':''}${equipamento? 'Equipamento: '+equipamento+'\n':''}${numero_serie? 'Número de série: '+numero_serie+'\n':''}${descricao_problema? 'Problema relatado: '+descricao_problema+'\n':''}${procedimento_sugerido? 'Procedimento sugerido: '+procedimento_sugerido+'\n':''}\nNossa equipe já está analisando o caso e enviará as orientações por aqui, neste mesmo WhatsApp. Por favor, mantenha este número disponível.`;
 
-    let envioApiFalhou = false;
-    if(usaApi){
-      // a Edge Function já grava a interação "mensagem" sozinha — não
-      // duplicamos o insert aqui, diferente do caminho manual abaixo.
-      try{
-        await enviarViaWhatsAppApi({ atendimentoId: data.id, telefone: cliente_telefone, texto: mensagem, agenteId: currentAgente.id });
-      }catch(errEnvio){
-        envioApiFalhou = true;
-        console.error('[criar-atendimento] falha ao enviar via API do WhatsApp:', errEnvio);
-        toast('Protocolo criado, mas a mensagem não pôde ser enviada automaticamente: '+errEnvio.message);
-      }
-    }else{
-      await sb.from('interacoes').insert({
-        atendimento_id: data.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: mensagem
-      });
+    const resultadoEnvio = await enviarMensagemWhatsApp({
+      usaApi, atendimentoId: data.id, telefone: cliente_telefone, texto: mensagem,
+      winWhatsPreAberta: winWhats
+    });
+    const envioApiFalhou = usaApi && !resultadoEnvio.enviado;
+    if(envioApiFalhou){
+      console.error('[criar-atendimento] falha ao enviar via API do WhatsApp:', resultadoEnvio.erro);
+      toast('Protocolo criado, mas a mensagem não pôde ser enviada automaticamente: '+resultadoEnvio.erro);
     }
     if(procedimento_sugerido){
       await sb.from('interacoes').insert({
@@ -2700,11 +2762,8 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
 
     toast('Protocolo '+data.protocolo+' criado!'+(usaApi && !envioApiFalhou ? ' Mensagem enviada automaticamente.' : ''));
 
-    if(!usaApi){
-      // navega a aba já aberta no início do clique — sem isso, cai de
-      // volta no window.open normal (ver navegarAbaWhatsApp).
-      navegarAbaWhatsApp(winWhats, cliente_telefone, mensagem);
-    }
+    // não é preciso navegar a aba manualmente aqui — enviarMensagemWhatsApp
+    // já faz isso quando o modo é manual (ver winWhatsPreAberta acima).
 
     $('#novo-form-preview').style.display = 'none';
     $('#novo-confirmacao').style.display = 'block';
@@ -2755,6 +2814,14 @@ $('#btn-criar-atendimento').addEventListener('click', async ()=>{
       btnVideoNovo.onclick = ()=> iniciarOuPararGravacao(btnVideoNovo, 'video', (blob)=> enviarMidiaAqui('video', blob));
       const btnAnexarVideoNovo = $('#btn-novo-anexar-video');
       btnAnexarVideoNovo.onclick = ()=> anexarArquivoVideo(btnAnexarVideoNovo, (blob)=> enviarMidiaAqui('video', blob));
+      const inputDocNovo = $('#novo-documento-arquivo');
+      $('#btn-novo-anexar-documento').onclick = ()=> inputDocNovo.click();
+      inputDocNovo.onchange = ()=>{
+        const arquivo = inputDocNovo.files[0];
+        if(!arquivo) return;
+        enviarDocumentoConfirmado({ atendimentoId: data.id, telefone: cliente_telefone, arquivo });
+        inputDocNovo.value = '';
+      };
     }else{
       areaAudioNovo.style.display = 'none';
     }
@@ -3032,33 +3099,23 @@ $('#btn-criar-volume').addEventListener('click', async ()=>{
 
     const mensagem = `Olá! 👋\n\nSolicitação interna de volume de testes.\nProtocolo: ${data.protocolo}\nUnidade: ${unidade}\nColaborador: ${colaborador}\n${equipamento?'Equipamento(s): '+equipamento+'\n':''}${numeroSerie?'Número(s) de série:\n'+numeroSerie+'\n':''}${periodo?'Período de referência: '+periodo+'\n':''}\nPor favor, nos informe o volume de testes realizados${periodo?' no período':''} pelo(s) equipamento(s) acima. Se possível, envie também o print/foto do contador ou relatório — vamos anexar aqui no protocolo assim que recebermos.${mensagemExtra?'\n\n'+mensagemExtra:''}`;
 
-    let envioApiFalhou = false;
-    if(usaApi){
-      // atenção: este fluxo é sempre iniciado pelo agente (o colaborador
-      // nunca escreveu antes), então, fora de uma janela de 24h já aberta
-      // com aquele número, a Meta pode recusar mensagem de texto livre e
-      // exigir um template aprovado (Fase 6) — o catch abaixo trata isso
-      // com uma falha visível, sem travar a criação do protocolo.
-      try{
-        await enviarViaWhatsAppApi({ atendimentoId: data.id, telefone, texto: mensagem, agenteId: currentAgente.id });
-      }catch(errEnvio){
-        envioApiFalhou = true;
-        console.error('[criar-volume] falha ao enviar via API do WhatsApp:', errEnvio);
-        toast('Protocolo criado, mas a mensagem não pôde ser enviada automaticamente: '+errEnvio.message);
-      }
-    }else{
-      await sb.from('interacoes').insert({
-        atendimento_id: data.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: mensagem,
-        destinatario_telefone: telefone, destinatario_nome: colaborador
-      });
+    // atenção: este fluxo é sempre iniciado pelo agente (o colaborador
+    // nunca escreveu antes), então, fora de uma janela de 24h já aberta
+    // com aquele número, a Meta pode recusar mensagem de texto livre e
+    // exigir um template aprovado (Fase 6) — enviarMensagemWhatsApp trata
+    // isso como falha visível, sem travar a criação do protocolo.
+    const resultadoEnvio = await enviarMensagemWhatsApp({
+      usaApi, atendimentoId: data.id, telefone, texto: mensagem,
+      destinatarioTelefone: telefone, destinatarioNome: colaborador,
+      winWhatsPreAberta: winWhats
+    });
+    const envioApiFalhou = usaApi && !resultadoEnvio.enviado;
+    if(envioApiFalhou){
+      console.error('[criar-volume] falha ao enviar via API do WhatsApp:', resultadoEnvio.erro);
+      toast('Protocolo criado, mas a mensagem não pôde ser enviada automaticamente: '+resultadoEnvio.erro);
     }
 
     toast('Protocolo '+data.protocolo+' criado!'+(usaApi && !envioApiFalhou ? ' Mensagem enviada automaticamente.' : ''));
-
-    if(!usaApi){
-      // navega a aba já aberta no início do clique.
-      navegarAbaWhatsApp(winWhats, telefone, mensagem);
-    }
 
     $('#volume-form-preview').style.display = 'none';
     $('#vt-confirmacao').style.display = 'block';
@@ -3104,6 +3161,14 @@ $('#btn-criar-volume').addEventListener('click', async ()=>{
       btnVideoVt.onclick = ()=> iniciarOuPararGravacao(btnVideoVt, 'video', (blob)=> enviarMidiaAquiVt('video', blob));
       const btnAnexarVideoVt = $('#btn-vt-anexar-video');
       btnAnexarVideoVt.onclick = ()=> anexarArquivoVideo(btnAnexarVideoVt, (blob)=> enviarMidiaAquiVt('video', blob));
+      const inputDocVt = $('#vt-documento-arquivo');
+      $('#btn-vt-anexar-documento').onclick = ()=> inputDocVt.click();
+      inputDocVt.onchange = ()=>{
+        const arquivo = inputDocVt.files[0];
+        if(!arquivo) return;
+        enviarDocumentoConfirmado({ atendimentoId: data.id, telefone, arquivo });
+        inputDocVt.value = '';
+      };
     }else{
       areaAudioVt.style.display = 'none';
     }
@@ -4386,9 +4451,11 @@ async function abrirDetalhe(id){
           ${usaApiNesteAtendimento ? `<button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-chat-gravar-audio" title="Gravar e enviar mensagem de voz">🎤</button>` : ''}
           ${usaApiNesteAtendimento ? `<button type="button" class="btn btn-ghost btn-sm btn-mic" id="btn-chat-gravar-video" title="Gravar e enviar vídeo">🎥</button>` : ''}
           ${usaApiNesteAtendimento ? `<button type="button" class="btn btn-ghost btn-sm" id="btn-chat-anexar-video" title="Anexar vídeo já gravado" style="font-size:12px;">📹 Anexar vídeo</button>` : ''}
+          ${usaApiNesteAtendimento ? `<button type="button" class="btn btn-ghost btn-sm" id="btn-chat-anexar-documento" title="Enviar documento (PDF, planilha, imagem) ao cliente" style="font-size:12px;">📄 Documento</button>` : ''}
           <button type="button" class="btn btn-whatsapp btn-sm" id="btn-chat-enviar">Enviar</button>
         </div>
       </div>
+      ${usaApiNesteAtendimento ? `<input type="file" id="chat-documento-arquivo" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" style="display:none;"/>` : ''}
       <div id="chat-anexo-painel" style="display:none;gap:8px;flex-direction:column;padding-top:6px;border-top:1px solid var(--border);">
         <input type="file" id="nova-anexo-arquivo" accept="image/*,.pdf"/>
         <input type="text" id="nova-anexo-legenda" class="chat-anexo-legenda-input" placeholder="Legenda (opcional)"/>
@@ -4436,6 +4503,8 @@ async function abrirDetalhe(id){
   $('#btn-chat-gravar-audio')?.addEventListener('click', ()=> alternarGravacaoAudio(atendimento));
   $('#btn-chat-gravar-video')?.addEventListener('click', ()=> alternarGravacaoVideo(atendimento));
   $('#btn-chat-anexar-video')?.addEventListener('click', ()=> anexarVideoComposer(atendimento));
+  $('#btn-chat-anexar-documento')?.addEventListener('click', ()=> $('#chat-documento-arquivo')?.click());
+  $('#chat-documento-arquivo')?.addEventListener('change', ()=> enviarDocumentoComposer(atendimento));
 
   // ---- anexo (compacto, some por padrão; útil sobretudo em linhas ainda
   // manuais, onde a mídia não chega sozinha pela API) ----
@@ -4585,6 +4654,69 @@ async function enviarMidiaConfirmada({ atendimentoId, telefone, tipo, blob, apos
   }
 }
 
+// Tamanho máximo aceito para envio de documento ao cliente — conservador
+// em relação ao limite da própria Meta (100MB para documentos), pensado
+// para manter o upload rápido numa conexão de campo comum.
+const TAMANHO_MAX_DOCUMENTO = 15 * 1024 * 1024; // 15MB
+
+// Sobe um documento escolhido pelo técnico (PDF, planilha, imagem como
+// arquivo) para o mesmo bucket usado pelos demais anexos — diferente de
+// uploadMidiaGravada, aqui preservamos o nome original do arquivo, porque
+// é esse nome que a Meta exibe para o cliente na mensagem do WhatsApp.
+async function uploadDocumentoParaEnvio(arquivo, atendimentoId){
+  const nomeSeguro = arquivo.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+  const caminho = `${atendimentoId}/documento_${Date.now()}_${nomeSeguro}`;
+  const { error } = await sb.storage.from('evidencias').upload(caminho, arquivo, { contentType: arquivo.type || 'application/octet-stream' });
+  if(error) throw error;
+  const { data: pub } = sb.storage.from('evidencias').getPublicUrl(caminho);
+  return pub.publicUrl;
+}
+
+// Envia um documento ao cliente/colaborador pelo WhatsApp — mesmo padrão
+// de enviarMidiaConfirmada, mas para um arquivo escolhido do disco (não
+// um blob gravado na hora) e preservando o nome original.
+// Reaproveitada nos três pontos que hoje oferecem envio de mídia: o
+// compositor da Conversa, Novo Atendimento e Solicitar Volume de Testes
+// (o formulário de Transferir/Reenviar ainda não foi estendido — ver nota
+// na documentação).
+async function enviarDocumentoConfirmado({ atendimentoId, telefone, arquivo, aposEnviar }){
+  if(arquivo.size > TAMANHO_MAX_DOCUMENTO){
+    toast('Arquivo muito grande (máx. 15MB) — reduza o tamanho antes de enviar.');
+    return;
+  }
+  toast('Enviando documento…');
+  try{
+    const url = await uploadDocumentoParaEnvio(arquivo, atendimentoId);
+    await enviarViaWhatsAppApi({
+      atendimentoId, telefone, agenteId: currentAgente.id,
+      documentoUrl: url, documentoNome: arquivo.name
+    });
+    toast('Documento enviado.');
+    if(aposEnviar) await aposEnviar();
+  }catch(err){
+    console.error('[documento] erro ao enviar:', err);
+    mostrarAvisoModal('Não foi possível enviar o documento: '+traduzirErroWhatsApp(err?.message || err));
+  }
+}
+
+// Disparado pelo botão "📄 Documento" na Janela de Conversa.
+async function enviarDocumentoComposer(atendimento){
+  const input = $('#chat-documento-arquivo');
+  const arquivo = input?.files[0];
+  if(!arquivo) return;
+  await enviarDocumentoConfirmado({
+    atendimentoId: atendimento.id, telefone: atendimento.cliente_telefone, arquivo,
+    aposEnviar: async ()=>{
+      if(atendimento.status === 'aberto'){
+        await sb.from('atendimentos').update({status:'em_andamento'}).eq('id', atendimento.id);
+      }
+      abrirDetalhe(atendimento.id);
+      atualizarListaAtivaEmSegundoPlano();
+    }
+  });
+  input.value = '';
+}
+
 let audioTransferenciaBlob = null; // guardado entre a confirmação da prévia e o envio, no formulário de Transferir/Reenviar
 let videoTransferenciaBlob = null; // idem, para vídeo
 
@@ -4664,15 +4796,21 @@ async function enviarComposerConversa(atendimento){
         atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'procedimento', conteudo: texto
       });
       toast('Nota interna salva.');
-    }else if(usaApi){
-      await enviarViaWhatsAppApi({ atendimentoId: atendimento.id, telefone: atendimento.cliente_telefone, texto, agenteId: currentAgente.id });
-      toast('Mensagem enviada.');
     }else{
-      await sb.from('interacoes').insert({
-        atendimento_id: atendimento.id, agente_id: currentAgente.id, tipo:'mensagem', conteudo: texto
+      const resultadoEnvio = await enviarMensagemWhatsApp({
+        usaApi, atendimentoId: atendimento.id, telefone: atendimento.cliente_telefone, texto,
+        winWhatsPreAberta: winWhats
       });
-      navegarAbaWhatsApp(winWhats, atendimento.cliente_telefone, texto);
-      toast('Mensagem registrada — envie pelo WhatsApp que abriu.');
+      // diferente de criar-atendimento/criar-volume, uma falha de envio
+      // aqui interrompe o fluxo (cai no catch abaixo, sem limpar o
+      // textarea) em vez de deixar passar silenciosamente — é o
+      // comportamento já existente antes desta função existir, mantido
+      // de propósito: o técnico está no meio de uma conversa e precisa
+      // saber na hora que a mensagem não saiu, para tentar de novo.
+      if(resultadoEnvio.modo === 'api' && !resultadoEnvio.enviado){
+        throw new Error(resultadoEnvio.erro);
+      }
+      toast(resultadoEnvio.modo === 'api' ? 'Mensagem enviada.' : 'Mensagem registrada — envie pelo WhatsApp que abriu.');
     }
 
     if(atendimento.status === 'aberto'){
@@ -4912,6 +5050,15 @@ async function confirmarEnvio(atendimento, interacoes, modo){
   // a API sempre que a linha já estiver conectada, unificando com o resto
   // da Janela de Conversa. Só cai no link do WhatsApp (winWhats) quando a
   // linha ainda não migrou.
+  //
+  // Este fluxo NÃO usa enviarMensagemWhatsApp (ver essa função para o
+  // padrão comum) de propósito: transferência/reenvio grava sempre um
+  // registro de auditoria com tipo 'transferencia'/'reenvio' (não
+  // 'mensagem'), independente do canal, e no modo manual não navega a aba
+  // sozinho — mostra um modal com o botão de envio para o técnico
+  // conferir o texto antes de disparar. Forçar esse caso dentro do
+  // despachante genérico faria ele gravar uma interação 'mensagem' extra
+  // que nunca existiu aqui.
   const ehTransferencia = modo === 'transferir';
   const agenteEscolhidoId = ehTransferencia ? ($('#dest-agente-select')?.value || null) : null;
   const nome = $('#dest-nome').value.trim();
