@@ -3234,7 +3234,7 @@ async function renderDashboard(){
     sb.from('atendimentos').select('*', {count:'exact', head:true}).eq('status','aberto'),
     sb.from('atendimentos').select('*', {count:'exact', head:true}).eq('status','em_andamento'),
     sb.from('atendimentos').select('*', {count:'exact', head:true}).gte('criado_em', hojeInicio.toISOString()),
-    sb.from('atendimentos').select('*, linhas(nome)').order('criado_em',{ascending:false}).limit(8)
+    sb.from('atendimentos').select('*, linhas(nome), agentes(nome)').order('criado_em',{ascending:false}).limit(8)
   ]);
 
   $('#stat-abertos').textContent = cAberto ?? 0;
@@ -3243,7 +3243,7 @@ async function renderDashboard(){
 
   const wrap = $('#dashboard-table-wrap');
   if(!recentes || !recentes.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🗂</div>Nenhum atendimento ainda.</div>`; return; }
-  wrap.innerHTML = tabelaAtendimentos(recentes);
+  wrap.innerHTML = tabelaAtendimentos(recentes, {mostrarAgente:true});
   bindRowClicks(wrap);
   aplicarDestaquesDeMensagemNova(wrap);
 }
@@ -3252,7 +3252,7 @@ async function renderDashboard(){
 async function renderAtendimentosAtivos(){
   const wrap = $('#atendimentos-table-wrap');
   const { data, error } = await sb.from('atendimentos')
-    .select('*, linhas(nome)')
+    .select('*, linhas(nome), agentes(nome)')
     .in('status', ['aberto','em_andamento'])
     .order('criado_em', {ascending:false});
 
@@ -3302,7 +3302,7 @@ function renderTabelaAtendimentosFiltrada(){
     wrap.innerHTML = `<div class="empty-state"><div class="ic">✅</div>${filtro ? 'Nenhum atendimento com esse assunto no momento.' : 'Nenhum atendimento ativo no momento.'}</div>`;
     return;
   }
-  wrap.innerHTML = tabelaAtendimentos(filtrada);
+  wrap.innerHTML = tabelaAtendimentos(filtrada, {mostrarAgente:true});
   bindRowClicks(wrap);
   aplicarDestaquesDeMensagemNova(wrap);
 }
