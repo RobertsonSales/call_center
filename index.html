@@ -789,6 +789,7 @@
           <div class="field"><label>Até</label><input type="date" id="fh-ate"/></div>
           <div class="field"><label>Protocolo</label><input id="fh-protocolo" placeholder="AT-2026..."/></div>
           <div class="field"><label>Linha</label><select id="fh-linha"><option value="">Todas</option></select></div>
+          <div class="field"><label>Assunto</label><select id="fh-categoria"><option value="">Todos</option></select></div>
           <div class="field"><label>Status</label>
             <select id="fh-status">
               <option value="">Todos</option>
@@ -1313,6 +1314,15 @@ function badgeCategoria(categoria){
   if(!categoria) return '';
   const icone = ICONE_CATEGORIA[categoria] || '🏷️';
   return `<span class="badge" style="background:var(--bg);color:var(--text);border:1px solid var(--border);">${icone} ${escapeHtml(categoria)}</span>`;
+}
+
+// popula o filtro de Assunto do Histórico a partir do mesmo dicionário dos
+// badges — um valor novo em ICONE_CATEGORIA já aparece aqui sozinho, sem
+// precisar editar o HTML do filtro.
+const selCategoriaHist = $('#fh-categoria');
+if(selCategoriaHist){
+  selCategoriaHist.innerHTML = '<option value="">Todos</option>'
+    + Object.entries(ICONE_CATEGORIA).map(([nome, icone]) => `<option value="${nome}">${icone} ${nome}</option>`).join('');
 }
 
 function iniciais(nome){
@@ -4079,7 +4089,7 @@ $('#btn-filtrar-historico').addEventListener('click', ()=>{
 $('#btn-limpar-historico').addEventListener('click', ()=>{
   clearTimeout(timerFiltroProtocoloHistorico);
   $('#fh-de').value=''; $('#fh-ate').value=''; $('#fh-protocolo').value='';
-  $('#fh-linha').value=''; $('#fh-status').value='';
+  $('#fh-linha').value=''; $('#fh-status').value=''; $('#fh-categoria').value='';
   renderHistorico();
 });
 
@@ -4090,6 +4100,7 @@ $('#btn-limpar-historico').addEventListener('click', ()=>{
 // ajuste em Supervisão — evita duas buscas sobrepostas).
 $('#fh-linha')?.addEventListener('change', ()=>{ clearTimeout(timerFiltroProtocoloHistorico); renderHistorico(); });
 $('#fh-status')?.addEventListener('change', ()=>{ clearTimeout(timerFiltroProtocoloHistorico); renderHistorico(); });
+$('#fh-categoria')?.addEventListener('change', ()=>{ clearTimeout(timerFiltroProtocoloHistorico); renderHistorico(); });
 $('#fh-protocolo')?.addEventListener('input', ()=>{
   clearTimeout(timerFiltroProtocoloHistorico);
   timerFiltroProtocoloHistorico = setTimeout(()=> renderHistorico(), 350);
@@ -4160,12 +4171,14 @@ async function renderHistorico(resetPagina = true){
   const protocolo = $('#fh-protocolo').value.trim();
   const linha = $('#fh-linha').value;
   const status = $('#fh-status').value;
+  const categoria = $('#fh-categoria').value;
 
   if(de) q = q.gte('criado_em', new Date(de+'T00:00:00').toISOString());
   if(ate) q = q.lte('criado_em', new Date(ate+'T23:59:59').toISOString());
   if(protocolo) q = q.ilike('protocolo', `%${protocolo}%`);
   if(linha) q = q.eq('linha_id', linha);
   if(status) q = q.eq('status', status);
+  if(categoria) q = q.eq('categoria', categoria);
 
   const { data, error } = await q;
   if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar histórico.</p>'; wrapMais.style.display='none'; return; }
