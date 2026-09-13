@@ -905,13 +905,14 @@
       <!-- ---------- MÉTRICAS DE PERFORMANCE ---------- -->
       <div class="card card-pad" style="margin-bottom:22px;">
         <p class="section-title">Métricas de performance</p>
-        <p class="section-sub">Volume, status e tempo médio dos atendimentos, agrupados por unidade, cliente, equipamento, agente ou linha de captação da demanda. Reflete os filtros aplicados na listagem abaixo.</p>
+        <p class="section-sub">Volume, status e tempo médio dos atendimentos, agrupados por unidade, cliente, equipamento, agente, linha de captação da demanda ou assunto. Reflete os filtros aplicados na listagem abaixo.</p>
         <div class="dim-tabs" id="metricas-tabs">
           <button class="dim-tab active" data-dim="unidade">Unidade</button>
           <button class="dim-tab" data-dim="cliente">Cliente</button>
           <button class="dim-tab" data-dim="equipamento">Equipamento</button>
           <button class="dim-tab" data-dim="agente">Agente</button>
           <button class="dim-tab" data-dim="linha">Linha de captação</button>
+          <button class="dim-tab" data-dim="categoria">Assunto</button>
         </div>
         <div class="grid-2" style="margin-bottom:16px;">
           <div class="chart-box">
@@ -3475,7 +3476,7 @@ function bindRowClicks(wrap){
 // ---------------- MÉTRICAS DE PERFORMANCE (Supervisão) ----------------
 const ROTULO_DIMENSAO = {
   unidade: 'Unidade', cliente: 'Cliente', equipamento: 'Equipamento',
-  agente: 'Agente', linha: 'Linha de captação'
+  agente: 'Agente', linha: 'Linha de captação', categoria: 'Assunto'
 };
 
 function cssVar(nome){
@@ -3488,11 +3489,11 @@ function formatarMinutos(min){
   return h > 0 ? `${h}h ${m}min` : `${m}min`;
 }
 
-// Agrega a lista de atendimentos em 5 dimensões (unidade, cliente,
-// equipamento, agente, linha), somando contagens por status e tempo
-// de atendimento (só entram no tempo médio os já encerrados).
+// Agrega a lista de atendimentos em 6 dimensões (unidade, cliente,
+// equipamento, agente, linha, categoria/assunto), somando contagens por
+// status e tempo de atendimento (só entram no tempo médio os já encerrados).
 function computarMetricas(lista){
-  const grupos = { unidade:{}, cliente:{}, equipamento:{}, agente:{}, linha:{} };
+  const grupos = { unidade:{}, cliente:{}, equipamento:{}, agente:{}, linha:{}, categoria:{} };
 
   const acumular = (mapa, chaveBruta, item) => {
     const chave = (chaveBruta && String(chaveBruta).trim()) || 'Não informado';
@@ -3513,6 +3514,7 @@ function computarMetricas(lista){
     acumular(grupos.equipamento, a.equipamento, a);
     acumular(grupos.agente, a.agentes?.nome, a);
     acumular(grupos.linha, a.linhas?.nome, a);
+    acumular(grupos.categoria, a.categoria, a);
   });
 
   return grupos;
