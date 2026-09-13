@@ -937,6 +937,7 @@
           <div class="field"><label>Protocolo</label><input id="fs-protocolo" placeholder="AT-2026..."/></div>
           <div class="field"><label>Agente</label><select id="fs-agente"><option value="">Todos</option></select></div>
           <div class="field"><label>Linha</label><select id="fs-linha"><option value="">Todas</option></select></div>
+          <div class="field"><label>Assunto</label><select id="fs-categoria"><option value="">Todos</option></select></div>
           <div class="field"><label>Status</label>
             <select id="fs-status">
               <option value="">Todos</option>
@@ -1317,14 +1318,15 @@ function badgeCategoria(categoria){
   return `<span class="badge" style="background:var(--bg);color:var(--text);border:1px solid var(--border);">${icone} ${escapeHtml(categoria)}</span>`;
 }
 
-// popula o filtro de Assunto do Histórico a partir do mesmo dicionário dos
-// badges — um valor novo em ICONE_CATEGORIA já aparece aqui sozinho, sem
-// precisar editar o HTML do filtro.
+// popula os filtros de Assunto (Histórico e Supervisão) a partir do mesmo
+// dicionário dos badges — um valor novo em ICONE_CATEGORIA já aparece nos
+// dois sozinho, sem precisar editar HTML nenhum.
+const opcoesCategoriaHtml = '<option value="">Todos</option>'
+  + Object.entries(ICONE_CATEGORIA).map(([nome, icone]) => `<option value="${nome}">${icone} ${nome}</option>`).join('');
 const selCategoriaHist = $('#fh-categoria');
-if(selCategoriaHist){
-  selCategoriaHist.innerHTML = '<option value="">Todos</option>'
-    + Object.entries(ICONE_CATEGORIA).map(([nome, icone]) => `<option value="${nome}">${icone} ${nome}</option>`).join('');
-}
+if(selCategoriaHist) selCategoriaHist.innerHTML = opcoesCategoriaHtml;
+const selCategoriaSup = $('#fs-categoria');
+if(selCategoriaSup) selCategoriaSup.innerHTML = opcoesCategoriaHtml;
 
 function iniciais(nome){
   return (nome||'??').split(' ').filter(Boolean).slice(0,2).map(p=>p[0].toUpperCase()).join('');
@@ -3655,7 +3657,7 @@ $('#btn-filtrar-supervisao')?.addEventListener('click', ()=>{
 $('#btn-limpar-supervisao')?.addEventListener('click', ()=>{
   clearTimeout(timerFiltroProtocoloSupervisao);
   $('#fs-de').value=''; $('#fs-ate').value=''; $('#fs-protocolo').value='';
-  $('#fs-agente').value=''; $('#fs-linha').value=''; $('#fs-status').value='';
+  $('#fs-agente').value=''; $('#fs-linha').value=''; $('#fs-status').value=''; $('#fs-categoria').value='';
   renderSupervisao();
 });
 
@@ -3672,6 +3674,7 @@ $('#btn-limpar-supervisao')?.addEventListener('click', ()=>{
 // mesmos elementos que a primeira ainda não tinha terminado de montar).
 $('#fs-agente')?.addEventListener('change', ()=>{ clearTimeout(timerFiltroProtocoloSupervisao); renderSupervisao(); });
 $('#fs-linha')?.addEventListener('change', ()=>{ clearTimeout(timerFiltroProtocoloSupervisao); renderSupervisao(); });
+$('#fs-categoria')?.addEventListener('change', ()=>{ clearTimeout(timerFiltroProtocoloSupervisao); renderSupervisao(); });
 $('#fs-status')?.addEventListener('change', ()=>{ clearTimeout(timerFiltroProtocoloSupervisao); renderSupervisao(); });
 $('#fs-protocolo')?.addEventListener('input', ()=>{
   clearTimeout(timerFiltroProtocoloSupervisao);
@@ -3709,6 +3712,7 @@ async function renderSupervisao(resetPagina = true){
   const agente = $('#fs-agente').value;
   const linha = $('#fs-linha').value;
   const status = $('#fs-status').value;
+  const categoria = $('#fs-categoria').value;
 
   if(de) q = q.gte('criado_em', new Date(de+'T00:00:00').toISOString());
   if(ate) q = q.lte('criado_em', new Date(ate+'T23:59:59').toISOString());
@@ -3716,6 +3720,7 @@ async function renderSupervisao(resetPagina = true){
   if(agente) q = q.eq('agente_id', agente);
   if(linha) q = q.eq('linha_id', linha);
   if(status) q = q.eq('status', status);
+  if(categoria) q = q.eq('categoria', categoria);
 
   const { data, error } = await q;
   if(error){ wrap.innerHTML = '<p class="hint">Erro ao carregar. Confirme que este usuário está marcado como Supervisor ou Administrador Pleno no banco.</p>'; renderMetricas([]); wrapMais.style.display='none'; return; }
