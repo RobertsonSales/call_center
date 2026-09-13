@@ -771,6 +771,11 @@
       <div class="card card-pad">
         <p class="section-title" style="margin-bottom:4px;">🛠 Em andamento <span id="atendimentos-em-andamento-contador" class="badge badge-em_andamento" style="margin-left:6px;"></span></p>
         <p class="section-sub" style="margin-bottom:12px;">Chamados já assumidos por um técnico, em aberto ou em atendimento.</p>
+        <div style="margin-bottom:12px;">
+          <select id="filtro-categoria-ativos" style="max-width:260px;">
+            <option value="">Todos os assuntos</option>
+          </select>
+        </div>
         <div id="atendimentos-table-wrap"><div class="loading-row"><div class="spinner"></div>Carregando…</div></div>
       </div>
     </section>
@@ -1111,6 +1116,7 @@ let currentAgente = null;
 let linhasCache = [];
 let linhasComApiCache = new Set(); // ids de linhas com número já conectado à API do WhatsApp (whatsapp_numeros.ativo)
 let atendimentosComMensagemNova = new Map(); // atendimento_id -> quantidade de mensagens novas ainda não vistas (ver Realtime)
+let demaisAtendimentosCache = []; // última lista de atendimentos assumidos carregada, para o filtro de assunto refiltrar sem nova consulta
 let agentesCache = [];
 let historicoDataAtual = [];
 let supervisaoDataAtual = [];
@@ -1290,6 +1296,23 @@ function fmtData(iso){
 function badgeStatus(status){
   const labels = {aberto:'Aberto', em_andamento:'Em andamento', transferido:'Transferido', encerrado:'Encerrado'};
   return `<span class="badge badge-${status}">${labels[status]||status}</span>`;
+}
+
+// Categoria vem do menu de triagem do WhatsApp (ver whatsapp-webhook) — é
+// texto livre no banco, mas hoje só chega com um dos quatro valores fixos
+// do menu. Ícone é só cosmético; qualquer valor não previsto ainda exibe
+// normalmente (com um ícone genérico), então um menu novo no futuro não
+// quebra nada aqui.
+const ICONE_CATEGORIA = {
+  'Equipamento com problema': '🔧',
+  'Consumíveis / insumos': '🧪',
+  'Volume de testes': '📊',
+  'Outro assunto': '💬',
+};
+function badgeCategoria(categoria){
+  if(!categoria) return '';
+  const icone = ICONE_CATEGORIA[categoria] || '🏷️';
+  return `<span class="badge" style="background:var(--bg);color:var(--text);border:1px solid var(--border);">${icone} ${escapeHtml(categoria)}</span>`;
 }
 
 function iniciais(nome){
@@ -3248,11 +3271,42 @@ async function renderAtendimentosAtivos(){
   const contadorAndamento = $('#atendimentos-em-andamento-contador');
   if(contadorAndamento) contadorAndamento.textContent = String(demais.length);
 
-  if(!demais.length){ wrap.innerHTML = `<div class="empty-state"><div class="ic">✅</div>Nenhum atendimento ativo no momento.</div>`; return; }
-  wrap.innerHTML = tabelaAtendimentos(demais);
+  // guarda a lista completa (sem filtro) para o dropdown de categoria
+  // conseguir refiltrar na hora, sem precisar buscar de novo no Supabase.
+  demaisAtendimentosCache = demais;
+  popularFiltroCategoria(demais);
+  renderTabelaAtendimentosFiltrada();
+}
+
+// Preenche o <select> de assunto só com as categorias que realmente
+// aparecem na lista atual — evita mostrar opções vazias, e também cobre de
+// graça qualquer categoria nova que venha a existir no menu de triagem no
+// futuro, sem precisar tocar neste código.
+function popularFiltroCategoria(lista){
+  const select = $('#filtro-categoria-ativos');
+  if(!select) return;
+  const valorAtual = select.value;
+  const categorias = [...new Set(lista.map(a => a.categoria).filter(Boolean))].sort();
+  select.innerHTML = '<option value="">Todos os assuntos</option>'
+    + categorias.map(c => `<option value="${escapeHtml(c)}">${ICONE_CATEGORIA[c]||'🏷️'} ${escapeHtml(c)}</option>`).join('');
+  // preserva a escolha do técnico entre atualizações automáticas da lista
+  if(categorias.includes(valorAtual)) select.value = valorAtual;
+}
+
+function renderTabelaAtendimentosFiltrada(){
+  const wrap = $('#atendimentos-table-wrap');
+  const filtro = $('#filtro-categoria-ativos')?.value || '';
+  const filtrada = filtro ? demaisAtendimentosCache.filter(a => a.categoria === filtro) : demaisAtendimentosCache;
+
+  if(!filtrada.length){
+    wrap.innerHTML = `<div class="empty-state"><div class="ic">✅</div>${filtro ? 'Nenhum atendimento com esse assunto no momento.' : 'Nenhum atendimento ativo no momento.'}</div>`;
+    return;
+  }
+  wrap.innerHTML = tabelaAtendimentos(filtrada);
   bindRowClicks(wrap);
   aplicarDestaquesDeMensagemNova(wrap);
 }
+$('#filtro-categoria-ativos')?.addEventListener('change', renderTabelaAtendimentosFiltrada);
 
 // Soma "não assumidos" + protocolos com mensagem nova ainda não vista pelo
 // técnico atual — mostrado como contador no item de menu (ver Fluxo de
@@ -3302,7 +3356,7 @@ function renderCaixaDeEntrada(lista){
   wrap.innerHTML = lista.map(a => `
     <div class="interacao-item" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
       <div style="min-width:0;">
-        <div style="font-weight:700;">${escapeHtml(a.protocolo)} — ${escapeHtml(a.cliente_nome || a.cliente_telefone || '—')}</div>
+        <div style="font-weight:700;">${escapeHtml(a.protocolo)} — ${escapeHtml(a.cliente_nome || a.cliente_telefone || '—')} ${badgeCategoria(a.categoria)}</div>
         <div style="font-size:12px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:520px;">${escapeHtml((a.descricao_problema||'').slice(0,140))}</div>
       </div>
       <button class="btn btn-primary btn-sm btn-assumir" data-id="${a.id}" style="flex-shrink:0;">Assumir atendimento</button>
@@ -3379,12 +3433,13 @@ function tabelaAtendimentos(lista, opts={}){
   const mostrarAgente = !!opts.mostrarAgente;
   const mostrarReenviar = !!opts.mostrarReenviar;
   return `<div class="table-scroll"><table><thead><tr>
-      <th>Protocolo</th><th>Cliente</th><th>Linha</th>${mostrarAgente?'<th>Agente</th>':''}<th>Status</th><th>Início</th><th>Duração</th>${mostrarReenviar?'<th></th>':''}
+      <th>Protocolo</th><th>Cliente</th><th>Assunto</th><th>Linha</th>${mostrarAgente?'<th>Agente</th>':''}<th>Status</th><th>Início</th><th>Duração</th>${mostrarReenviar?'<th></th>':''}
     </tr></thead><tbody>
     ${lista.map(a=>`
       <tr data-id="${a.id}">
         <td class="mono" style="font-weight:600;">${ehSolicitacaoVolume(a)?'<span title="Solicitação de volume de testes" style="margin-right:4px;">📊</span>':''}${a.protocolo}</td>
         <td>${a.cliente_nome}</td>
+        <td>${badgeCategoria(a.categoria) || '<span class="hint">—</span>'}</td>
         <td>${a.linhas?.nome || '—'}</td>
         ${mostrarAgente?`<td>${a.agentes?.nome || '—'}</td>`:''}
         <td>${badgeStatus(a.status)}</td>
@@ -4409,6 +4464,7 @@ async function abrirDetalhe(id){
         <div><span class="label">Equipamento</span><span class="val">${atendimento.equipamento||'—'}</span></div>
         <div><span class="label">Linha</span><span class="val">${atendimento.linhas?.nome||'—'}</span></div>
         <div><span class="label">Agente responsável</span><span class="val">${atendimento.agentes?.nome||'—'}</span></div>
+        <div><span class="label">Assunto</span><span class="val">${atendimento.categoria ? badgeCategoria(atendimento.categoria) : '—'}</span></div>
       </div>
       <div class="meta">
         <div><span class="label">Início</span><span class="val">${fmtData(atendimento.criado_em)}</span></div>
@@ -4523,6 +4579,23 @@ async function abrirDetalhe(id){
 // pontos de envio da aplicação.
 // Traduz os erros mais comuns que a Meta devolve para uma linguagem que
 // faz sentido pra quem está atendendo, em vez do JSON cru da API.
+// ---------------- LIMITES DE TAMANHO E DURAÇÃO DE ANEXOS ----------------
+// Alinhados aos limites reais da própria Cloud API da Meta (áudio e vídeo:
+// 16MB; documento: 100MB), mas com margem de segurança abaixo deles — e,
+// para áudio/vídeo, a duração é o controle principal, não só o tamanho: é
+// o que WhatsApp, Instagram e a maioria dos apps de mensagem fazem (corta
+// a gravação automaticamente em vez de deixar gravar livre e reprovar só
+// depois, quando o técnico já perdeu tempo gravando). Isso também contém
+// o crescimento do Storage no Supabase, que a própria análise de custo já
+// identificou como o item mais sensível do orçamento.
+const DURACAO_MAX_AUDIO_SEG = 300;              // 5 minutos
+const DURACAO_MAX_VIDEO_SEG = 60;               // 1 minuto
+const TAMANHO_MAX_AUDIO = 8 * 1024 * 1024;      // 8MB — folga sob o teto de 16MB da Meta
+const TAMANHO_MAX_VIDEO = 16 * 1024 * 1024;     // 16MB — teto real da Meta para vídeo
+const TAMANHO_MAX_DOCUMENTO = 15 * 1024 * 1024; // 15MB — documentos e evidências (imagem/PDF)
+
+function formatarMB(bytes){ return (bytes / (1024*1024)).toFixed(0); }
+
 // ---------------- MÍDIA (ÁUDIO E VÍDEO) ----------------
 // Compartilhada pelo compositor da Janela de Conversa e pelas telas de
 // Novo Atendimento, Volume de Testes e Transferência. Grava (câmera ou
@@ -4551,7 +4624,7 @@ function iniciarOuPararGravacao(btnEl, tipo, aoConfirmarEnvio){
 
     // indicador visível de gravação — pílula vermelha com ponto pulsante
     // e cronômetro ao vivo, bem mais chamativo do que só a cor do botão.
-    let indicador = null, timerCronometro = null;
+    let indicador = null, timerCronometro = null, pareiPorLimiteDeDuracao = false;
     if(btnEl){
       indicador = document.createElement('span');
       indicador.className = 'indicador-gravacao';
@@ -4566,12 +4639,28 @@ function iniciarOuPararGravacao(btnEl, tipo, aoConfirmarEnvio){
       }, 500);
     }
 
+    // corta a gravação sozinha ao atingir a duração máxima do tipo — evita
+    // que o técnico grave vários minutos de vídeo só para descobrir depois
+    // que passou do tamanho aceito (ver bloco de limites acima).
+    const duracaoMaxSeg = tipo === 'video' ? DURACAO_MAX_VIDEO_SEG : DURACAO_MAX_AUDIO_SEG;
+    const timeoutDuracaoMax = setTimeout(()=>{
+      if(rec.state === 'recording'){
+        pareiPorLimiteDeDuracao = true;
+        rec.stop();
+      }
+    }, duracaoMaxSeg * 1000);
+
     rec.addEventListener('stop', ()=>{
       stream.getTracks().forEach(t => t.stop()); // libera câmera/microfone
       gravadorAtivo = null;
+      clearTimeout(timeoutDuracaoMax);
       if(timerCronometro) clearInterval(timerCronometro);
       if(indicador) indicador.remove();
       if(btnEl){ btnEl.textContent = textoOriginalBtn; btnEl.classList.remove('gravando'); btnEl.title = tipo === 'video' ? 'Gravar vídeo' : 'Gravar áudio'; }
+      if(pareiPorLimiteDeDuracao){
+        const minutos = Math.round(duracaoMaxSeg/60) || duracaoMaxSeg;
+        toast(`Duração máxima atingida (${tipo === 'video' ? minutos+' min' : minutos+' min'}) — gravação encerrada automaticamente.`);
+      }
       const blob = new Blob(chunks, { type: rec.mimeType || (tipo === 'video' ? 'video/webm' : 'audio/webm') });
       mostrarPreviaMidia(btnEl, tipo, blob, aoConfirmarEnvio);
     });
@@ -4588,6 +4677,11 @@ function iniciarOuPararGravacao(btnEl, tipo, aoConfirmarEnvio){
 // "Enviar" aqui; "Descartar" cancela sem deixar rastro.
 function mostrarPreviaMidia(btnEl, tipo, blob, aoConfirmarEnvio){
   if(blob.size < 800){ toast('Gravação muito curta — tente de novo.'); return; }
+  const limiteTamanho = tipo === 'video' ? TAMANHO_MAX_VIDEO : TAMANHO_MAX_AUDIO;
+  if(blob.size > limiteTamanho){
+    toast(`${tipo === 'video' ? 'Vídeo' : 'Áudio'} muito grande (máx. ${formatarMB(limiteTamanho)}MB) — grave um trecho mais curto ou envie um arquivo menor.`);
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const previa = document.createElement('div');
   previa.className = 'previa-midia';
@@ -4654,10 +4748,8 @@ async function enviarMidiaConfirmada({ atendimentoId, telefone, tipo, blob, apos
   }
 }
 
-// Tamanho máximo aceito para envio de documento ao cliente — conservador
-// em relação ao limite da própria Meta (100MB para documentos), pensado
-// para manter o upload rápido numa conexão de campo comum.
-const TAMANHO_MAX_DOCUMENTO = 15 * 1024 * 1024; // 15MB
+// Tamanho máximo aceito para envio de documento ao cliente — ver bloco de
+// limites no início da seção de mídia.
 
 // Sobe um documento escolhido pelo técnico (PDF, planilha, imagem como
 // arquivo) para o mesmo bucket usado pelos demais anexos — diferente de
@@ -4681,7 +4773,7 @@ async function uploadDocumentoParaEnvio(arquivo, atendimentoId){
 // na documentação).
 async function enviarDocumentoConfirmado({ atendimentoId, telefone, arquivo, aposEnviar }){
   if(arquivo.size > TAMANHO_MAX_DOCUMENTO){
-    toast('Arquivo muito grande (máx. 15MB) — reduza o tamanho antes de enviar.');
+    toast(`Arquivo muito grande (máx. ${formatarMB(TAMANHO_MAX_DOCUMENTO)}MB) — reduza o tamanho antes de enviar.`);
     return;
   }
   toast('Enviando documento…');
@@ -4858,6 +4950,10 @@ async function salvarAnexoRecebido(atendimento){
   const arquivo = $('#nova-anexo-arquivo').files[0];
   const legenda = $('#nova-anexo-legenda').value.trim();
   if(!arquivo){ toast('Selecione um arquivo antes de salvar.'); return; }
+  if(arquivo.size > TAMANHO_MAX_DOCUMENTO){
+    toast(`Arquivo muito grande (máx. ${formatarMB(TAMANHO_MAX_DOCUMENTO)}MB).`);
+    return;
+  }
 
   const btn = $('#btn-salvar-anexo');
   btn.disabled = true; btn.textContent = 'Enviando…';
@@ -5068,6 +5164,10 @@ async function confirmarEnvio(atendimento, interacoes, modo){
   const status = $('#dest-status');
 
   if(!telefone){ toast('Informe o WhatsApp do destinatário.'); return; }
+  if(arquivo && arquivo.size > TAMANHO_MAX_DOCUMENTO){
+    toast(`Arquivo muito grande (máx. ${formatarMB(TAMANHO_MAX_DOCUMENTO)}MB).`);
+    return;
+  }
 
   const usaApi = atendimento.canal === 'whatsapp_api' || linhaTemApiAtiva(atendimento.linha_id);
   // só abre a aba de forma síncrona quando o caminho é o manual — no
