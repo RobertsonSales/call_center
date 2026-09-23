@@ -24,13 +24,22 @@
 
 import { createClient } from '@supabase/supabase-js';
 
+// Devolve { agente } quando tudo confere, ou { erro } com o motivo
+// específico — em vez de colapsar tudo (token ausente, service_role
+// key inválida, não ser supervisor, conta inativa) na mesma mensagem
+// genérica, o que tornava impossível saber qual dessas causas era a
+// real sem olhar os logs do servidor.
 async function getSolicitanteAdmin(req, supabaseAdmin){
   const authHeader = req.headers['authorization'] || '';
   const token = authHeader.replace(/^Bearer\s+/i, '');
-  if(!token) return null;
+  if(!token) return { erro: 'Nenhum token de sessão foi enviado — faça login novamente.' };
 
   const { data: userData, error: userErr } = await supabaseAdmin.auth.getUser(token);
-  if(userErr || !userData?.user) return null;
+  if(userErr){
+    console.error('[api/agentes] falha ao validar o token:', userErr.message);
+    return { erro: 'Não foi possível validar sua sessão (' + userErr.message + '). Se a mensagem mencionar "Invalid API key", confira a SUPABASE_SERVICE_ROLE_KEY nas variáveis de ambiente do Vercel.' };
+  }
+  if(!userData?.user) return { erro: 'Sessão inválida ou expirada — faça login novamente.' };
 
   const { data: agente, error: agErr } = await supabaseAdmin
     .from('agentes')
@@ -38,8 +47,15 @@ async function getSolicitanteAdmin(req, supabaseAdmin){
     .eq('id', userData.user.id)
     .single();
 
-  if(agErr || !agente || !agente.is_admin || agente.ativo === false) return null;
-  return agente;
+  if(agErr){
+    console.error('[api/agentes] falha ao buscar o perfil do agente:', agErr.message);
+    return { erro: 'Não foi possível confirmar seu perfil de agente (' + agErr.message + ').' };
+  }
+  if(!agente) return { erro: 'Não existe perfil de agente para esta conta.' };
+  if(!agente.is_admin) return { erro: 'Sua conta não está marcada como Supervisor (agentes.is_admin = false).' };
+  if(agente.ativo === false) return { erro: 'Sua conta de agente está inativa.' };
+
+  return { agente };
 }
 
 export default async function handler(req, res){
@@ -55,11 +71,12 @@ export default async function handler(req, res){
     auth: { autoRefreshToken: false, persistSession: false }
   });
 
-  const solicitante = await getSolicitanteAdmin(req, supabaseAdmin);
-  if(!solicitante){
-    res.status(403).json({ error: 'Apenas supervisores autenticados podem gerenciar agentes.' });
+  const resultado = await getSolicitanteAdmin(req, supabaseAdmin);
+  if(!resultado.agente){
+    res.status(403).json({ error: resultado.erro || 'Apenas supervisores autenticados podem gerenciar agentes.' });
     return;
   }
+  const solicitante = resultado.agente;
 
   // ---------------- CRIAR AGENTE ----------------
   if(req.method === 'POST'){
