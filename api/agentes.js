@@ -43,7 +43,7 @@ async function getSolicitanteAdmin(req, supabaseAdmin){
 
   const { data: agente, error: agErr } = await supabaseAdmin
     .from('agentes')
-    .select('id, is_admin, ativo')
+    .select('id, is_admin, ativo, papel')
     .eq('id', userData.user.id)
     .single();
 
@@ -52,10 +52,20 @@ async function getSolicitanteAdmin(req, supabaseAdmin){
     return { erro: 'Não foi possível confirmar seu perfil de agente (' + agErr.message + ').' };
   }
   if(!agente) return { erro: 'Não existe perfil de agente para esta conta.' };
-  if(!agente.is_admin) return { erro: 'Sua conta não está marcada como Supervisor (agentes.is_admin = false).' };
+
+  // Desde a migração 001_admin_pleno.sql, o papel real vive na coluna
+  // "papel" (tecnico/supervisor/admin_pleno) — "is_admin" é mantida só
+  // por compatibilidade com o restante do app, mas pode ficar
+  // desatualizada se "papel" for alterado por um UPDATE direto no
+  // banco sem tocar as duas colunas juntas. Por isso calculamos aqui
+  // do mesmo jeito que o próprio front-end faz no login, em vez de
+  // confiar cegamente na coluna is_admin armazenada.
+  const papel = agente.papel || (agente.is_admin ? 'supervisor' : 'tecnico');
+  const ehSupervisorOuSuperior = papel === 'supervisor' || papel === 'admin_pleno';
+  if(!ehSupervisorOuSuperior) return { erro: 'Sua conta não está marcada como Supervisor nem Administrador Pleno (papel atual: ' + papel + ').' };
   if(agente.ativo === false) return { erro: 'Sua conta de agente está inativa.' };
 
-  return { agente };
+  return { agente: { ...agente, papel } };
 }
 
 export default async function handler(req, res){
